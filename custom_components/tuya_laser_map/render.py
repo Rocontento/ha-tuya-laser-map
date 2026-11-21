@@ -147,16 +147,29 @@ def calibration_points(vmap: VacuumMap) -> list[dict]:
     return pts
 
 
+def _outline(fp: np.ndarray, step: int = 3) -> list[tuple[int, int]]:
+    """Row-scan polygon (left edge down, right edge up) every ``step`` cells.
+    ponytail: exact for y-monotone rooms; L/U shapes get their concave side bridged."""
+    rows = [y for y in range(0, fp.shape[0], step) if fp[y].any()]
+    last = int(np.nonzero(fp.any(1))[0].max())
+    if rows[-1] != last:
+        rows.append(last)
+    left = [(int(np.nonzero(fp[y])[0].min()), y) for y in rows]
+    right = [(int(np.nonzero(fp[y])[0].max()) + 1, y) for y in rows]
+    left[-1] = (left[-1][0], left[-1][1] + 1)
+    right[-1] = (right[-1][0], right[-1][1] + 1)
+    return left + right[::-1]
+
+
 def room_outlines(vmap: VacuumMap) -> dict[int, dict]:
-    """Per room: label position and outline (bounding polygon) in robot coordinates, for the card."""
+    """Per room: label position and outline (row-scan polygon) in robot coordinates, for the card."""
     _, prints = room_layers(vmap)
     out = {}
     for r, fp in prints.items():
         ys, xs = np.nonzero(fp)
         if not len(xs):
             continue
-        x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
-        poly = [vmap.to_robot(x, y) for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
+        poly = [vmap.to_robot(x, y) for x, y in _outline(fp)]
         out[r] = {"name": vmap.rooms[r].name if r in vmap.rooms else f"Room {r}",
                   "label": vmap.to_robot(xs.mean(), ys.mean()), "outline": poly}
     return out
