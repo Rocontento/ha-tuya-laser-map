@@ -9,13 +9,14 @@ import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.helpers.selector import (
-    SelectOptionDict, SelectSelector, SelectSelectorConfig, TextSelector, TextSelectorConfig, TextSelectorType,
+    BooleanSelector, FileSelector, FileSelectorConfig, SelectOptionDict, SelectSelector, SelectSelectorConfig, TextSelector, TextSelectorConfig, TextSelectorType,
 )
 
 from .const import (
-    CONF_DEVICE_ID, CONF_DEVICE_PASSWORD, CONF_HOST, CONF_LOCAL_KEY, CONF_STUN, CONF_THEME, CONF_USER_ID,
-    DEFAULT_THEME, DOMAIN,
+    CONF_DEVICE_ID, CONF_DEVICE_PASSWORD, CONF_FLOOR_PLAN, CONF_HOST, CONF_LOCAL_KEY, CONF_REMOVE_PLAN, CONF_STUN,
+    CONF_THEME, CONF_USER_ID, DEFAULT_THEME, DOMAIN,
 )
 from .discovery import find_ip
 
@@ -143,8 +144,31 @@ class LaserMapConfigFlow(ConfigFlow, domain=DOMAIN):
 
 class LaserMapOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            from . import plan_store  # noqa: PLC0415 (avoid import cycle at module load)
+            from .floorplan import align, parse_dxf  # noqa: PLC0415
+
+            store = plan_store(self.hass, self.config_entry.entry_id)
+            if user_input.get(CONF_REMOVE_PLAN):
+                await store.async_remove()
+            elif file_id := user_input.get(CONF_FLOOR_PLAN):
+                vmap = getattr(self.config_entry.runtime_data, "vmap", None)
+                if vmap is None:
+                    errors["base"] = "map_not_ready"
+                else:
+                    def _load() -> list[dict]:
+                        with process_uploaded_file(self.hass, file_id) as path:
+                            return align(vmap, parse_dxf(path.read_text(encoding="utf-8", errors="replace")))
+                    try:
+                        await store.async_save({"entities": await self.hass.async_add_executor_job(_load)})
+                    except ValueError:
+                        errors["base"] = "bad_plan"
+            if not errors:
+                return self.async_create_entry(data={CONF_THEME: user_input[CONF_THEME]})
         theme = self.config_entry.options.get(CONF_THEME, DEFAULT_THEME)
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(
-            {vol.Required(CONF_THEME, default=theme): vol.In({"light": "Light", "dark": "Dark"})}))
+        return self.async_show_form(step_id="init", errors=errors, data_schema=vol.Schema({
+            vol.Required(CONF_THEME, default=theme): vol.In({"light": "Light", "dark": "Dark"}),
+            vol.Optional(CONF_FLOOR_PLAN): FileSelector(FileSelectorConfig(accept=".dxf")),
+            vol.Optional(CONF_REMOVE_PLAN, default=False): BooleanSelector(),
+        }))

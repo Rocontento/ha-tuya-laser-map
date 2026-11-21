@@ -14,3 +14,16 @@ password (the account password is not stored). Use it next to tuya-local / Local
 vacuum controls.
 
 Tested on: Cecotec Conga 9590 Spin Revolution (Tuya product `q3yo7zqlfxkr0cv0`).
+
+## Map card
+
+The integration ships its own card (no resource to add): `type: custom:tuya-laser-map-card`, `entity: camera.<robot>_map`,
+optional `vacuum`, `title` and `room_names: {1: Living room, ...}`. Tap rooms or add a zone to clean; switch to
+**Límites** to drag/stretch virtual walls and no-go zones and save them to the robot (`tuya_laser_map.set_limits`).
+
+## Real floor plan (optional)
+
+Scan your home with a free RoomPlan app (e.g. OpenPlan3D), export **DXF**, then upload it in the integration's
+**Configure** dialog. It is aligned to the robot map automatically and drawn behind what the robot sees.
+The plan is stored only in your Home Assistant `.storage`; it never leaves your server.
+

@@ -3,12 +3,12 @@
   "name": "Tuya Laser Vacuum Map",
   "codeowners": [],
   "config_flow": true,
-  "after_dependencies": ["frontend"],
+  "after_dependencies": ["file_upload", "frontend"],
   "dependencies": ["http"],
   "documentation": "https://github.com/Rocontento/ha-tuya-laser-map",
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/Rocontento/ha-tuya-laser-map/issues",
   "requirements": ["tuya-mobile==1.2.0"],
-  "version": "0.5.1"
+  "version": "0.6.0"
 }

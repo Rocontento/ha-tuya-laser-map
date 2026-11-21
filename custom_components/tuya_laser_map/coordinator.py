@@ -34,6 +34,7 @@ class LaserMapCoordinator:
         self.rooms: dict[int, dict] = {}
         self.selected: set[int] = set()
         self.targets: list[list[tuple[int, int]]] = []  # zones being cleaned
+        self.plan: list[dict] | None = None  # LiDAR floor plan, robot coords (floorplan.py)
         self.walls: list[tuple[int, int, int, int]] = []
         self.nogo: list[dict] = []
         self._nogo_protocol = 1
@@ -105,9 +106,9 @@ class LaserMapCoordinator:
         await asyncio.sleep(0.5)  # coalesce map + path arriving together
         self._render_pending = False
         vmap, path, sel, theme = self.vmap, list(self.path), set(self.selected), self.theme
-        targets = list(self.targets)  # walls/no-go zones are drawn (and edited) by the card
+        targets, plan = list(self.targets), self.plan  # walls/no-go zones are drawn (and edited) by the card
         png, cal, rooms = await self.hass.async_add_executor_job(
-            lambda: (render_png(vmap, path, sel, theme, targets=targets), calibration_points(vmap),
+            lambda: (render_png(vmap, path, sel, theme, targets=targets, plan=plan), calibration_points(vmap),
                      room_outlines(vmap)))
         self.png, self.calibration, self.rooms = png, cal, rooms
         self._notify()

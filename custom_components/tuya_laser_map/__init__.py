@@ -10,6 +10,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 import pathlib
@@ -51,11 +52,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = LaserMapCoordinator(hass, dict(entry.data), dict(entry.options))
     entry.runtime_data = coordinator
+    coordinator.plan = ((await plan_store(hass, entry.entry_id).async_load()) or {}).get("entities")
     coordinator.start()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(lambda h, e: h.config_entries.async_reload(e.entry_id)))
     _register_services(hass)
     return True
+
+
+def plan_store(hass: HomeAssistant, entry_id: str) -> Store:
+    """The aligned floor plan is private home data: kept only in this server's .storage."""
+    return Store(hass, 1, f"{DOMAIN}.{entry_id}.floor_plan")
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await plan_store(hass, entry.entry_id).async_remove()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

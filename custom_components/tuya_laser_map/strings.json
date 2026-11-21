@@ -52,9 +52,18 @@
     "step": {
       "init": {
         "data": {
-          "theme": "Map style"
+          "theme": "Map style",
+          "floor_plan": "Floor plan (DXF from a LiDAR room scan)",
+          "remove_floor_plan": "Remove floor plan"
+        },
+        "data_description": {
+          "floor_plan": "Upload the DXF exported by a RoomPlan app (e.g. OpenPlan3D). It is aligned to the robot map automatically and stored only on this server."
         }
       }
+    },
+    "error": {
+      "map_not_ready": "The robot map is not loaded yet; try again in a minute.",
+      "bad_plan": "Could not read walls from that file (needs a WALLS layer)."
     }
   },
   "entity": {

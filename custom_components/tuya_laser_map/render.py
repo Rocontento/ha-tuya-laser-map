@@ -15,9 +15,11 @@ SCALE = 5  # output pixels per map cell
 BRUSH_CM = 30  # width of the cleaned swath drawn along the path
 
 THEMES = {
-    "light": dict(bg=(255, 255, 255), room=(236, 236, 232), floor=(196, 196, 192), wall=(58, 58, 62), target=(200, 220, 245),
+    "light": dict(bg=(255, 255, 255), room=(242, 241, 237), floor=(214, 214, 209), obstacle=(150, 150, 152),
+                  plan_wall=(44, 44, 48), window=(10, 132, 255), door=(160, 160, 165), furniture=(200, 198, 192), wall=(58, 58, 62), target=(200, 220, 245),
                   accent=(0, 122, 255), limit=(255, 59, 48)),
-    "dark": dict(bg=(18, 18, 20), room=(40, 40, 44), floor=(72, 72, 78), wall=(205, 205, 210), target=(30, 62, 105),
+    "dark": dict(bg=(18, 18, 20), room=(36, 36, 40), floor=(66, 66, 72), obstacle=(120, 120, 128),
+                 plan_wall=(225, 225, 230), window=(10, 132, 255), door=(110, 110, 118), furniture=(70, 70, 76), wall=(205, 205, 210), target=(30, 62, 105),
                  accent=(10, 132, 255), limit=(255, 69, 58)),
 }
 
@@ -64,26 +66,64 @@ def room_layers(vmap: VacuumMap) -> tuple[np.ndarray, dict[int, np.ndarray]]:
 def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selected: set[int] | None = None,
                theme: str = "light", walls: list[tuple[int, int, int, int]] | None = None,
                zones: list[list[tuple[int, int]]] | None = None,
-               targets: list[list[tuple[int, int]]] | None = None) -> bytes:
-    """``targets``: zone polygons (robot coords) being cleaned, tinted like selected rooms."""
+               targets: list[list[tuple[int, int]]] | None = None, plan: list[dict] | None = None) -> bytes:
+    """``targets``: zone polygons (robot coords) being cleaned, tinted like selected rooms.
+    ``plan``: floor plan entities in robot coords (floorplan.align); drawn as the real house behind
+    what the robot sees."""
     t = THEMES.get(theme, THEMES["light"])
     s = SCALE
     c = np.frombuffer(vmap.cells, np.uint8).reshape(vmap.height, vmap.width)
     img = np.empty(c.shape + (3,), np.uint8)
     img[:] = t["bg"]
     floor = (c & 7) == 7
-    _, prints = room_layers(vmap)
-    if prints:  # background: each room as it really is (furniture holes filled), robot's view on top
-        img[_arr(_img(np.logical_or.reduce(list(prints.values()))).filter(ImageFilter.MaxFilter(5)))] = t["room"]
-    img[floor] = t["floor"]
-    if selected:
-        img[floor & (c != FLOOR_NO_ROOM) & np.isin(c >> 3, list(selected))] = t["target"]
-    img[c == WALL] = t["wall"]
-    canvas = Image.fromarray(img).resize((vmap.width * s, vmap.height * s), Image.NEAREST).convert("RGBA")
+    size = (vmap.width * s, vmap.height * s)
 
     def px(rx: float, ry: float) -> tuple[float, float]:
         cx, cy = vmap.to_cell(rx, ry)
         return cx * s, cy * s
+
+    inside = None
+    if plan:  # the real house: interior = what the outside can't reach once walls/windows/doors close it
+        block = Image.new("L", size, 0)
+        bd = ImageDraw.Draw(block)
+        for e in plan:
+            if e["layer"] in ("WALLS", "WINDOWS", "DOORS"):
+                q = [px(*p) for p in e["points"]]
+                bd.polygon(q, fill=255) if e["closed"] else bd.line(q, fill=255, width=s * 3)
+        ImageDraw.floodfill(block, (0, 0), 128)
+        inside = np.asarray(block) != 128
+    else:
+        _, prints = room_layers(vmap)
+        if prints:  # no plan: each room's footprint (furniture holes filled) as background
+            img[_arr(_img(np.logical_or.reduce(list(prints.values()))).filter(ImageFilter.MaxFilter(5)))] = t["room"]
+    img[floor] = t["floor"]
+    if selected:
+        img[floor & (c != FLOOR_NO_ROOM) & np.isin(c >> 3, list(selected))] = t["target"]
+    img[c == WALL] = t["obstacle" if plan else "wall"]
+    big = np.asarray(Image.fromarray(img).resize(size, Image.NEAREST))
+    if inside is not None:
+        robot = np.asarray(Image.fromarray(((floor | (c == WALL)) * 255).astype(np.uint8)).resize(size, Image.NEAREST)) > 0
+        out = np.empty_like(big)
+        out[:] = t["bg"]
+        out[inside] = t["room"]
+        keep = inside & robot  # robot data outside the house (seen through windows) is dropped
+        out[keep] = big[keep]
+        big = out
+    canvas = Image.fromarray(big).convert("RGBA")
+    if plan:
+        d = ImageDraw.Draw(canvas)
+        for e in plan:
+            if e["layer"] == "FURNITURE":
+                q = [px(*p) for p in e["points"]]
+                d.line(q + ([q[0]] if e["closed"] else []), fill=t["furniture"], width=1)
+        for e in plan:
+            q = [px(*p) for p in e["points"]]
+            if e["layer"] == "WALLS" and e["closed"]:
+                d.polygon(q, fill=t["plan_wall"])
+            elif e["layer"] == "WINDOWS":
+                d.line(q + ([q[0]] if e["closed"] else []), fill=t["window"], width=2)
+            elif e["layer"] == "DOORS":
+                d.line(q, fill=t["door"], width=2)
 
     def overlay(draw) -> None:
         layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))

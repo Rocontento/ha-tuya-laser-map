@@ -52,9 +52,18 @@
     "step": {
       "init": {
         "data": {
-          "theme": "Estilo del mapa"
+          "theme": "Estilo del mapa",
+          "floor_plan": "Plano (DXF de un escaneo LiDAR)",
+          "remove_floor_plan": "Quitar el plano"
+        },
+        "data_description": {
+          "floor_plan": "Sube el DXF exportado por una app de RoomPlan (p. ej. OpenPlan3D). Se encaja solo con el mapa del robot y se guarda únicamente en este servidor."
         }
       }
+    },
+    "error": {
+      "map_not_ready": "El mapa del robot aún no se ha cargado; vuelve a intentarlo en un minuto.",
+      "bad_plan": "No se han podido leer paredes de ese archivo (necesita una capa WALLS)."
     }
   },
   "entity": {
