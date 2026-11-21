@@ -94,7 +94,8 @@ def _plan_layers(vmap: VacuumMap, plan: list[dict], t: dict, px, size) -> tuple[
             d.line(q + ([q[0]] if e["closed"] else []), fill=t["window"], width=2)
         elif e["layer"] == "DOORS":
             d.line(q, fill=t["door"], width=2)
-    _PLAN_CACHE.clear()  # ponytail: one robot, one entry
+    if len(_PLAN_CACHE) >= 2:  # light + dark of the current frame; ponytail: one robot, one entry
+        _PLAN_CACHE.clear()
     _PLAN_CACHE[key] = (np.asarray(block) != 128, lines)
     return _PLAN_CACHE[key]
 

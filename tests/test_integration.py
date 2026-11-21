@@ -21,7 +21,7 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
-async def test_map_camera_and_room_clean(hass):
+async def test_map_camera_and_room_clean(hass, hass_client_no_auth):
     async def fake_session(host, dev, key, pwd, uid, ices, on_file, idle):
         assert ices == [{"urls": "stun:192.0.2.1:3478"}]
         on_file("map.bin.stream", map_bytes())
@@ -60,6 +60,12 @@ async def test_map_camera_and_room_clean(hass):
         rooms = state.attributes["rooms"]
         assert {r["name"] for r in rooms.values()} >= {"Kitchen", "Living room", "Bathroom"}
         assert len(state.attributes["calibration_points"]) == 3
+
+        # light/dark map for the card: needs the camera token
+        client = await hass_client_no_auth()
+        dark = await client.get(state.attributes["picture_dark"])
+        assert dark.status == 200 and (await dark.read()) == coord.pngs["dark"] != coord.pngs["light"]
+        assert (await client.get("/api/tuya_laser_map/camera.conga_map/dark.png?token=nope")).status == 401
 
         await hass.services.async_call(DOMAIN, "clean_rooms", {"rooms": ["Kitchen", 9]}, blocking=True)
         assert base64.b64decode(sent["15"]).hex() == "aa01000000051401020309" + "%02x" % ((0x14 + 1 + 2 + 3 + 9) & 0xFF)

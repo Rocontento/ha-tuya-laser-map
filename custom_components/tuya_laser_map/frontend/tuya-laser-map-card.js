@@ -29,11 +29,14 @@ const inPoly = (pt, poly) => {  // ray casting
   }
   return inside;
 };
-const CLEAN_MODES = [["sweep", "Aspirar"], ["mop", "Fregar"], ["sweep_and_mop", "Ambos"]];
+const CLEAN_MODES = [["sweep", "Aspirar", "mdi:fan"], ["mop", "Fregar", "mdi:water"], ["sweep_and_mop", "Ambos", "mdi:robot-vacuum"]];
 const LEVELS = { low: "Baja", medium: "Media", high: "Alta" };
 // tuya-local entity suffixes on the robot's device: [life sensor, reset button, label]
-const PARTS = [["filter_life", "reset_filter", "Filtro"], ["side_brush_lifetime", "reset_edge_brush", "Cepillo lateral"],
-  ["rolling_brush_lifetime", "reset_roll_brush", "Cepillo principal"], ["duster_cloth_lifetime", "reset_mop_cloth", "Mopa"]];
+const PARTS = [["filter_life", "reset_filter", "Filtro", "mdi:air-filter"],
+  ["side_brush_lifetime", "reset_edge_brush", "Cepillo lateral", "mdi:brush"],
+  ["rolling_brush_lifetime", "reset_roll_brush", "Cepillo principal", "mdi:broom"],
+  ["duster_cloth_lifetime", "reset_mop_cloth", "Mopa", "mdi:water"]];
+const icon = (name, size = 18) => Object.assign(document.createElement("ha-icon"), { icon: name, style: `--mdc-icon-size:${size}px` });
 const ACTIVE = ["cleaning", "paused", "returning"];
 
 class TuyaLaserMapCard extends HTMLElement {
@@ -80,13 +83,17 @@ class TuyaLaserMapCard extends HTMLElement {
     const st = hass.states[this._cfg.entity];
     const vac = this._cfg.vacuum && hass.states[this._cfg.vacuum];
     const rel = this._relatedIds(hass, vac).map((e) => hass.states[e]);
-    if (st === this._st && vac === this._vac && rel.every((r, i) => r === (this._rel || [])[i])) return;
+    const dark = !!(hass.themes && hass.themes.darkMode);
+    if (dark === this._dark && st === this._st && vac === this._vac && rel.every((r, i) => r === (this._rel || [])[i])) return;
     this._st = st;
     this._vac = vac;
     this._rel = rel;
+    this._dark = dark;
     if (!st) return;
     const a = st.attributes;
-    if (a.entity_picture && this._img.getAttribute("src") !== a.entity_picture) this._img.src = a.entity_picture;
+    this.shadowRoot.querySelector("ha-card").classList.toggle("dark", dark);
+    const pic = (dark ? a.picture_dark : a.picture_light) || a.entity_picture;
+    if (pic && this._img.getAttribute("src") !== pic) this._img.src = pic;
     this._calibrate(a.calibration_points || []);
     this._render();
   }
@@ -129,15 +136,22 @@ class TuyaLaserMapCard extends HTMLElement {
     const root = this.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
-        ha-card { padding: 14px; overflow: hidden; }
+        ha-card { padding: 14px; overflow: hidden;
+          --map-bg: #fff; --label: #1c1c1e; --label-halo: #fff; --float: rgba(255,255,255,.94); --float-text: #1c1c1e;
+          --fill: rgba(120,120,128,.14); --sep: rgba(60,60,67,.14); }
+        ha-card.dark { --map-bg: #121214; --label: #f2f2f7; --label-halo: #121214; --float: rgba(44,44,46,.94);
+          --float-text: #f2f2f7; --fill: rgba(120,120,128,.26); --sep: rgba(235,235,245,.14); }
+        ha-icon { display: inline-flex; }
         .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
         .title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
         .sub { font-size: 13px; color: var(--secondary-text-color); }
         .seg { display: inline-flex; background: rgba(120,120,128,.16); border-radius: 9px; padding: 2px; }
-        .seg button { border: 0; background: none; font: inherit; font-size: 13px; font-weight: 500; padding: 6px 14px;
+        .seg button { border: 0; background: none; font: inherit; font-size: 13px; font-weight: 500; padding: 6px 12px;
+          display: inline-flex; align-items: center; gap: 5px;
           border-radius: 7px; color: var(--primary-text-color); cursor: pointer; }
         .seg button.on { background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
-        .map { position: relative; border-radius: 12px; overflow: hidden; background: #fff; user-select: none;
+        ha-card.dark .seg button.on { background: #636366; }
+        .map { position: relative; border-radius: 12px; overflow: hidden; background: var(--map-bg); user-select: none;
           -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
         .map.editing { touch-action: none; }
         .map.zoomed { touch-action: none; }
@@ -145,32 +159,43 @@ class TuyaLaserMapCard extends HTMLElement {
         .map img { display: block; width: 100%; height: auto; }
         .map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
         .zoom { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 6px; }
-        .zoom button { width: 32px; height: 32px; border: 0; border-radius: 9px; background: rgba(255,255,255,.92);
-          box-shadow: 0 1px 4px rgba(0,0,0,.18); font-size: 18px; line-height: 1; color: #1c1c1e; cursor: pointer; }
-        .menu { position: absolute; display: none; flex-direction: column; min-width: 170px; background: rgba(255,255,255,.97);
+        .zoom button { width: 34px; height: 34px; border: 0; border-radius: 10px; background: var(--float);
+          box-shadow: 0 1px 4px rgba(0,0,0,.18); color: var(--float-text); cursor: pointer; display: grid; place-items: center; }
+        .menu { position: absolute; display: none; flex-direction: column; min-width: 170px; background: var(--float);
           border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.22); overflow: hidden; z-index: 2; }
         .menu.show { display: flex; }
         .menu button { border: 0; background: none; text-align: left; padding: 11px 14px; font: inherit; font-size: 14px;
-          color: #1c1c1e; cursor: pointer; }
-        .menu button + button { border-top: 1px solid rgba(60,60,67,.14); }
+          color: var(--float-text); cursor: pointer; display: flex; align-items: center; gap: 10px; }
+        .menu button + button { border-top: 1px solid var(--sep); }
         .alert { display: none; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(255,59,48,.12);
           color: #FF3B30; font-size: 14px; font-weight: 500; }
         .alert.show { display: block; }
-        .opts { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; }
+        .opts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
         .opts:empty { display: none; }
-        .opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--secondary-text-color); }
+        .opt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--secondary-text-color); }
+        .opt .lbl { display: inline-flex; align-items: center; gap: 6px; min-width: 92px; }
+        .opt .seg { flex: 1; max-width: 340px; }
+        .opt .seg button { flex: 1; justify-content: center; padding: 6px 6px; }
         .maint { margin-top: 12px; font-size: 14px; }
         .maint summary { cursor: pointer; color: var(--secondary-text-color); font-size: 13px; }
         .row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
         .row + .row { border-top: 1px solid rgba(60,60,67,.12); }
-        .row .name { flex: 1; }
+        .row .name { flex: 1; display: inline-flex; align-items: center; gap: 8px; }
+        .row + .row { border-top-color: var(--sep); }
         .row .val { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
         .row .val.due { color: #FF3B30; font-weight: 600; }
         .drag { cursor: grab; touch-action: none; }
         .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
         .btn { border: 0; border-radius: 10px; padding: 9px 14px; font: inherit; font-size: 14px; font-weight: 500;
-          background: rgba(120,120,128,.14); color: var(--primary-text-color); cursor: pointer; }
+          background: var(--fill); color: var(--primary-text-color); cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
         .btn.on, .btn.primary { background: ${BLUE}; color: #fff; }
+        .btn.primary { flex: 1; min-width: 150px; padding: 13px 18px; border-radius: 14px; font-size: 15px; font-weight: 600; }
+        .tools, .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; }
+        .round { border: 0; background: none; padding: 0; font: inherit; color: var(--primary-text-color); cursor: pointer;
+          display: inline-flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; min-width: 52px; }
+        .round span { width: 46px; height: 46px; border-radius: 50%; background: var(--fill); display: grid; place-items: center; }
+        .round.warn span { color: #FF3B30; }
         .btn.danger { color: #FF3B30; }
         .btn:disabled { opacity: .4; cursor: default; }
         .spacer { flex: 1; }
@@ -183,11 +208,11 @@ class TuyaLaserMapCard extends HTMLElement {
       <ha-card>
         <div class="head">
           <div><div class="title"></div><div class="sub"></div></div>
-          <div class="seg"><button data-m="clean">Limpiar</button><button data-m="limits">Límites</button></div>
+          <div class="seg"><button data-m="clean"><ha-icon icon="mdi:robot-vacuum" style="--mdc-icon-size:16px"></ha-icon>Limpiar</button><button data-m="limits"><ha-icon icon="mdi:wall" style="--mdc-icon-size:16px"></ha-icon>Límites</button></div>
         </div>
         <div class="alert"></div>
         <div class="map"><div class="stage"><img alt=""><svg xmlns="${NS}"></svg></div>
-          <div class="zoom"><button data-z="1.5" title="Acercar">+</button><button data-z="0.667" title="Alejar">−</button></div>
+          <div class="zoom"><button data-z="1.5" title="Acercar" aria-label="Acercar"><ha-icon icon="mdi:plus" style="--mdc-icon-size:20px"></ha-icon></button><button data-z="0.667" title="Alejar" aria-label="Alejar"><ha-icon icon="mdi:minus" style="--mdc-icon-size:20px"></ha-icon></button></div>
           <div class="menu"></div><div class="toast"></div></div>
         <div class="opts"></div>
         <div class="bar"></div>
@@ -293,18 +318,18 @@ class TuyaLaserMapCard extends HTMLElement {
     const hit = Object.entries(rooms).find(([, r]) => inPoly(pt, r.outline));
     const names = this._cfg.room_names || {}, m = this._menu;
     m.replaceChildren();
-    const item = (label, fn) => {
+    const item = (label, ic, fn) => {
       const b = document.createElement("button");
-      b.textContent = label;
+      b.append(icon(ic), label);
       b.addEventListener("click", async () => { m.classList.remove("show"); await fn(); });
       m.appendChild(b);
     };
-    item("Ir aquí", async () => {
+    item("Ir aquí", "mdi:map-marker-down", async () => {
       if (await this._call("tuya_laser_map", "goto", { x: pt[0], y: pt[1] })) this._toast("Yendo al punto");
     });
     if (hit) {
       const [id, r] = hit;
-      item(`Limpiar ${names[id] || r.name}`, async () => {
+      item(`Limpiar ${names[id] || r.name}`, "mdi:broom", async () => {
         if (await this._call("tuya_laser_map", "clean_rooms", { rooms: [Number(id)], times: this._times })) {
           this._toast("Enviado al robot");
         }
@@ -392,7 +417,7 @@ class TuyaLaserMapCard extends HTMLElement {
     for (const [id, r] of Object.entries(a.rooms || {})) {
       const [x, y] = this._toPx(r.label[0], r.label[1]);
       const t = this._el("text", { x, y, "text-anchor": "middle", "dominant-baseline": "middle", "font-size": 13 * k,
-        "font-weight": 600, fill: "#1c1c1e", stroke: "#fff", "stroke-width": 3.5 * k, "paint-order": "stroke",
+        "font-weight": 600, fill: "var(--label)", stroke: "var(--label-halo)", "stroke-width": 3.5 * k, "paint-order": "stroke",
         "font-family": "-apple-system, system-ui, sans-serif", "pointer-events": "none" });
       t.textContent = (done.has(Number(id)) && Number(id) !== cur ? "✓ " : "") + (names[id] || r.name);
     }
@@ -452,7 +477,7 @@ class TuyaLaserMapCard extends HTMLElement {
 
   _handle(pt, color, onDown) {
     const k = this._k, [x, y] = this._toPx(pt[0], pt[1]);
-    this._el("circle", { cx: x, cy: y, r: 9 * k, fill: "#fff", stroke: color, "stroke-width": 3 * k, "pointer-events": "none" });
+    this._el("circle", { cx: x, cy: y, r: 9 * k, fill: "var(--map-bg)", stroke: color, "stroke-width": 3 * k, "pointer-events": "none" });
     const hit = this._el("circle", { cx: x, cy: y, r: 22 * k, fill: "transparent", class: "drag" });
     hit.addEventListener("pointerdown", onDown);
   }
@@ -479,14 +504,30 @@ class TuyaLaserMapCard extends HTMLElement {
   }
 
   // --- action bar -------------------------------------------------------------------------
-  _btn(label, cls, onClick, disabled) {
+  _btn(label, cls, onClick, disabled, ic, parent) {
     const b = document.createElement("button");
     b.className = `btn ${cls || ""}`;
-    b.textContent = label;
+    if (ic) b.append(icon(ic));
+    b.append(label);
     b.disabled = !!disabled;
     b.addEventListener("click", onClick);
-    this._bar.appendChild(b);
+    (parent || this._bar).appendChild(b);
     return b;
+  }
+
+  _round(ic, caption, onClick, parent, cls) {  // robot controls: round icon with a caption, set apart from the rest
+    const b = Object.assign(document.createElement("button"), { className: `round ${cls || ""}`, title: caption });
+    const c = document.createElement("span");
+    c.append(icon(ic, 22));
+    b.append(c, caption);
+    b.addEventListener("click", onClick);
+    parent.appendChild(b);
+  }
+
+  _row(cls) {
+    const r = Object.assign(document.createElement("div"), { className: cls });
+    this._bar.appendChild(r);
+    return r;
   }
 
   _renderBar() {
@@ -523,12 +564,18 @@ class TuyaLaserMapCard extends HTMLElement {
     el.classList.toggle("show", !!err);
   }
 
-  _chips(parent, label, options, current, onPick) {
+  _chips(parent, label, ic, options, current, onPick) {
     const wrap = Object.assign(document.createElement("div"), { className: "opt" });
-    wrap.appendChild(document.createTextNode(label));
+    if (label) {  // the mode row goes without one: its options already say what they are
+      const lbl = Object.assign(document.createElement("span"), { className: "lbl" });
+      lbl.append(icon(ic, 16), label);
+      wrap.appendChild(lbl);
+    }
     const seg = Object.assign(document.createElement("div"), { className: "seg" });
-    for (const [v, text] of options) {
-      const b = Object.assign(document.createElement("button"), { textContent: text, className: v === current ? "on" : "" });
+    for (const [v, text, oi] of options) {
+      const b = Object.assign(document.createElement("button"), { className: v === current ? "on" : "" });
+      if (oi) b.append(icon(oi, 15));
+      b.append(text);
       b.addEventListener("click", () => v !== current && onPick(v));
       seg.appendChild(b);
     }
@@ -542,25 +589,34 @@ class TuyaLaserMapCard extends HTMLElement {
     if (this._mode !== "clean") return;
     const mode = this._state("select", "cleaning_mode"), water = this._state("select", "mopping"), vac = this._vac;
     const pick = (ent, option) => this._call("select", "select_option", { entity_id: ent.entity_id, option });
-    if (mode) this._chips(el, "", CLEAN_MODES.filter(([v]) => mode.attributes.options.includes(v)), mode.state, (v) => pick(mode, v));
+    if (mode) {
+      this._chips(el, "", null, CLEAN_MODES.filter(([v]) => mode.attributes.options.includes(v)),
+        mode.state, (v) => pick(mode, v));
+    }
     const m = mode ? mode.state : "sweep";
     const speeds = (vac && vac.attributes.fan_speed_list) || [];
     if (m !== "mop" && speeds.length) {
-      this._chips(el, "Aspiración", speeds.map((v) => [v, LEVELS[v.toLowerCase()] || v]), vac.attributes.fan_speed,
+      this._chips(el, "Aspiración", "mdi:fan", speeds.map((v) => [v, LEVELS[v.toLowerCase()] || v]), vac.attributes.fan_speed,
         (v) => this._call("vacuum", "set_fan_speed", { entity_id: this._cfg.vacuum, fan_speed: v }));
     }
     if (m !== "sweep" && water) {
-      this._chips(el, "Agua", water.attributes.options.filter((v) => v !== "off").map((v) => [v, LEVELS[v] || v]),
+      this._chips(el, "Agua", "mdi:water", water.attributes.options.filter((v) => v !== "off").map((v) => [v, LEVELS[v] || v]),
         water.state, (v) => pick(water, v));
     }
+    this._chips(el, "Pasadas", "mdi:repeat", [[1, "1"], [2, "2"], [3, "3"]], this._times, (v) => {
+      this._times = v;
+      this._renderOpts();
+    });
   }
 
   _renderParts() {
     const el = this.shadowRoot.querySelector(".parts");
     el.replaceChildren();
-    const row = (name, value, due, btn) => {
+    const row = (ic, name, value, due, btn) => {
       const r = Object.assign(document.createElement("div"), { className: "row" });
-      r.append(Object.assign(document.createElement("span"), { className: "name", textContent: name }));
+      const n = Object.assign(document.createElement("span"), { className: "name" });
+      n.append(icon(ic), name);
+      r.append(n);
       if (value != null) r.append(Object.assign(document.createElement("span"), { className: `val ${due ? "due" : ""}`, textContent: value }));
       if (btn) r.append(btn);
       el.appendChild(r);
@@ -573,43 +629,47 @@ class TuyaLaserMapCard extends HTMLElement {
       });
       return b;
     };
-    for (const [life, reset, name] of PARTS) {
+    for (const [life, reset, name, ic] of PARTS) {
       const s = this._state("sensor", life), btn = this._ent("button", reset);
       if (!s || isNaN(Number(s.state))) continue;
       const h = Math.round(Number(s.state) / 60);  // minutes left; negative = overdue
-      row(name, h > 0 ? `${h} h` : "Cambiar", h <= 0,
+      row(ic, name, h > 0 ? `${h} h` : "Cambiar", h <= 0,
         btn && button("Reiniciar", btn, `¿Reiniciar el contador de ${name.toLowerCase()}? Hazlo solo si lo acabas de cambiar.`, "Contador reiniciado"));
     }
     const empty = this._ent("button", "empty_dust");
-    if (empty) row("Depósito de polvo", null, false, button("Vaciar", empty, null, "Vaciando depósito"));
+    if (empty) row("mdi:delete-empty", "Depósito de polvo", null, false, button("Vaciar", empty, null, "Vaciando depósito"));
   }
 
   _cleanBar() {
     const vac = this._cfg.vacuum, state = this._vac && this._vac.state;
     const busy = state === "cleaning" || state === "returning";
-    this._btn("+ Zona", "", () => {
+    const tools = this._row("tools");
+    this._btn("Zona", "", () => {
       const [cx, cy] = this._center(), h = this._unitsPerMeter * 0.75;
       this._rooms.clear();
       this._zones.push({ points: rectPts([cx - h, cy - h], [cx + h, cy + h]) });
       this._sel = { kind: "clean", i: this._zones.length - 1 };
       this._render();
-    });
+    }, false, "mdi:vector-square-plus", tools);
     if (this._sel && this._sel.kind === "clean") {
-      this._btn("Quitar zona", "danger", () => { this._zones.splice(this._sel.i, 1); this._sel = null; this._render(); });
+      this._btn("Quitar zona", "danger", () => { this._zones.splice(this._sel.i, 1); this._sel = null; this._render(); },
+        false, "mdi:delete-outline", tools);
     }
-    this._btn(`${this._times} pasada${this._times > 1 ? "s" : ""}`, "", () => { this._times = (this._times % 3) + 1; this._renderBar(); });
-    this._bar.appendChild(Object.assign(document.createElement("div"), { className: "spacer" }));
-    if (vac && busy) {
-      this._btn("Pausar", "", () => this._call("vacuum", "pause", { entity_id: vac }));
+    if (this._rooms.size || this._zones.length) {
+      this._btn("Deseleccionar", "", () => { this._rooms.clear(); this._zones = []; this._sel = null; this._render(); },
+        false, "mdi:close", tools);
     }
-    if (vac && (busy || state === "paused")) this._btn("Parar", "", () => this._call("vacuum", "stop", { entity_id: vac }));
+    const act = this._row("actions");
+    if (vac && busy) this._round("mdi:pause", "Pausar", () => this._call("vacuum", "pause", { entity_id: vac }), act);
+    if (vac && (busy || state === "paused")) this._round("mdi:stop", "Parar", () => this._call("vacuum", "stop", { entity_id: vac }), act, "warn");
     if (vac) {
-      this._btn("Localizar", "", async () => {
+      this._round("mdi:home-import-outline", "Base", () => this._call("vacuum", "return_to_base", { entity_id: vac }), act);
+      this._round("mdi:bell-ring-outline", "Localizar", async () => {
         if (await this._call("vacuum", "locate", { entity_id: vac })) this._toast("El robot está sonando");
-      });
-      this._btn("Base", "", () => this._call("vacuum", "return_to_base", { entity_id: vac }));
+      }, act);
     }
     const n = this._zones.length || this._rooms.size;
+    if (state === "cleaning" && !n) return this._hint("Mantén pulsado un punto del mapa para ir allí o limpiar esa habitación.");
     const label = this._zones.length ? `Limpiar ${n} zona${n > 1 ? "s" : ""}`
       : this._rooms.size ? `Limpiar ${n} habitaci${n > 1 ? "ones" : "ón"}` : state === "paused" ? "Reanudar" : "Limpiar todo";
     this._btn(label, "primary", async () => {
@@ -625,47 +685,49 @@ class TuyaLaserMapCard extends HTMLElement {
         ok = await this._call("vacuum", "start", { entity_id: vac });
       } else return this._toast("Toca habitaciones o añade una zona");
       if (ok) { this._toast("Enviado al robot"); this._zones = []; this._rooms.clear(); this._sel = null; this._render(); }
-    });
+    }, false, "mdi:play", act);
     this._hint(this._zones.length ? "Arrastra la zona; tócala para ver sus esquinas y estirarla."
       : "Toca habitaciones para elegirlas, o añade una zona. Mantén pulsado un punto para ir allí o limpiar esa habitación.");
   }
 
   _limitsBar() {
     const d = this._draft, sel = this._sel, u = this._unitsPerMeter;
-    this._btn("+ Muro", "", () => {
+    const tools = this._row("tools");
+    this._btn("Muro", "", () => {
       const [cx, cy] = this._center();
       d.walls.push([cx - u / 2, cy, cx + u / 2, cy]);
       this._sel = { kind: "wall", i: d.walls.length - 1 };
       this._render();
-    });
-    this._btn("+ Zona", "", () => {
+    }, false, "mdi:wall", tools);
+    this._btn("Zona", "", () => {
       const [cx, cy] = this._center();
       d.zones.push({ mode: 0, points: rectPts([cx - u / 2, cy - u / 2], [cx + u / 2, cy + u / 2]) });
       this._sel = { kind: "zone", i: d.zones.length - 1 };
       this._render();
-    });
+    }, false, "mdi:vector-square-plus", tools);
     if (sel && sel.kind === "zone") {
       const z = d.zones[sel.i];
-      [[0, "Prohibido"], [1, "No aspirar"], [2, "No fregar"]].forEach(([m, label]) =>
-        this._btn(label, (z.mode === m || (m === 0 && z.mode === 3)) ? "on" : "", () => { z.mode = m; this._render(); }));
+      [[0, "Prohibido", "mdi:cancel"], [1, "No aspirar", "mdi:fan-off"], [2, "No fregar", "mdi:water-off"]].forEach(([m, label, ic]) =>
+        this._btn(label, (z.mode === m || (m === 0 && z.mode === 3)) ? "on" : "", () => { z.mode = m; this._render(); }, false, ic, tools));
     }
     if (sel) {
       this._btn("Eliminar", "danger", () => {
         (sel.kind === "wall" ? d.walls : d.zones).splice(sel.i, 1);
         this._sel = null;
         this._render();
-      });
+      }, false, "mdi:delete-outline", tools);
     }
-    this._bar.appendChild(Object.assign(document.createElement("div"), { className: "spacer" }));
+    const act = this._row("actions");
     const dirty = this._dirty();
-    this._btn("Descartar", "", () => { this._draft = this._limitsFromState(); this._sel = null; this._render(); }, !dirty);
+    this._btn("Descartar", "", () => { this._draft = this._limitsFromState(); this._sel = null; this._render(); }, !dirty,
+      "mdi:undo", act);
     this._btn("Guardar", "primary", async () => {
       const ok = await this._call("tuya_laser_map", "set_limits", {
         walls: d.walls.map((w) => w.map(Math.round)),
         no_go_zones: d.zones.map((z) => ({ mode: z.mode, points: z.points.map((p) => p.map(Math.round)) })),
       });
       if (ok) { this._toast("Guardado en el robot"); this._sel = null; this._draft = null; this._mode = "clean"; this._render(); }
-    }, !dirty);
+    }, !dirty, "mdi:content-save-outline", act);
     this._hint("Toca un muro o zona para seleccionarlo; arrástralo o estira sus puntos. Nada se envía hasta Guardar.");
   }
 

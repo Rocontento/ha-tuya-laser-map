@@ -31,7 +31,7 @@ class LaserMapCoordinator:
         self.theme = options.get(CONF_THEME, DEFAULT_THEME)
         self.vmap: VacuumMap | None = None
         self.path: list[list[tuple[int, int]]] = []  # path segments of the current cleaning job
-        self.png: bytes | None = None
+        self.pngs: dict[str, bytes] = {}  # theme -> rendered map (light and dark, for the card)
         self.updated: dict[str, str] = {}  # file kind -> last time the robot sent a new one (diagnostics)
         self.calibration: list[dict] = []
         self.rooms: dict[int, dict] = {}
@@ -177,17 +177,22 @@ class LaserMapCoordinator:
                 key = (vmap.map_id, id(plan))
                 outlines = key != self._outline_key or now - self._outline_at > 60
                 png, cal, rooms = await self.hass.async_add_executor_job(
-                    lambda: (render_png(vmap, path, sel, theme, targets=targets, plan=plan),
+                    lambda: ({th: render_png(vmap, path, sel, th, targets=targets, plan=plan) for th in ("light", "dark")},
                              calibration_points(vmap), room_outlines(vmap, plan) if outlines else None))
                 if outlines:
                     self.rooms, self._outline_key, self._outline_at = rooms, key, now
-                self.png, self.calibration = png, cal
+                self.pngs, self.calibration = png, cal
                 _LOGGER.debug("rendered in %.2fs%s", time.monotonic() - now, " (+outlines)" if outlines else "")
                 self._notify()
                 if not self._render_again:
                     break
         finally:
             self._rendering = False
+
+    @property
+    def png(self) -> bytes | None:
+        """The map in the theme chosen in the options (the camera image)."""
+        return self.pngs.get(self.theme)
 
     # --- listeners ---------------------------------------------------------------------
     def add_listener(self, cb: Callable[[], None]) -> Callable[[], None]:
