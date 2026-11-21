@@ -54,10 +54,12 @@
         "data": {
           "theme": "Estilo del mapa",
           "floor_plan": "Plano (DXF de un escaneo LiDAR)",
-          "remove_floor_plan": "Quitar el plano"
+          "remove_floor_plan": "Quitar el plano",
+          "source_vacuum": "Robot a reflejar (empezar, pausa, estado)"
         },
         "data_description": {
-          "floor_plan": "Sube el DXF exportado por una app de RoomPlan (p. ej. OpenPlan3D). Se encaja solo con el mapa del robot y se guarda únicamente en este servidor."
+          "floor_plan": "Sube el DXF exportado por una app de RoomPlan (p. ej. OpenPlan3D). Se encaja solo con el mapa del robot y se guarda únicamente en este servidor.",
+          "source_vacuum": "La entidad de robot que ya controla este aparato (p. ej. tuya-local). El robot con habitaciones de esta integración le reenvía las órdenes."
         }
       }
     },
@@ -70,6 +72,11 @@
     "camera": {
       "map": {
         "name": "Mapa"
+      }
+    },
+    "vacuum": {
+      "rooms": {
+        "name": "Habitaciones"
       }
     }
   },

@@ -54,10 +54,12 @@
         "data": {
           "theme": "Map style",
           "floor_plan": "Floor plan (DXF from a LiDAR room scan)",
-          "remove_floor_plan": "Remove floor plan"
+          "remove_floor_plan": "Remove floor plan",
+          "source_vacuum": "Vacuum to mirror (start, pause, state)"
         },
         "data_description": {
-          "floor_plan": "Upload the DXF exported by a RoomPlan app (e.g. OpenPlan3D). It is aligned to the robot map automatically and stored only on this server."
+          "floor_plan": "Upload the DXF exported by a RoomPlan app (e.g. OpenPlan3D). It is aligned to the robot map automatically and stored only on this server.",
+          "source_vacuum": "The vacuum entity that already controls this robot (e.g. tuya-local). The room vacuum of this integration forwards its commands there."
         }
       }
     },
@@ -70,6 +72,11 @@
     "camera": {
       "map": {
         "name": "Map"
+      }
+    },
+    "vacuum": {
+      "rooms": {
+        "name": "Rooms"
       }
     }
   },

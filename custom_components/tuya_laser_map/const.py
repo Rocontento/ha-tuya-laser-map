@@ -11,6 +11,7 @@ CONF_THEME = "theme"
 DEFAULT_THEME = "light"
 CONF_FLOOR_PLAN = "floor_plan"
 CONF_REMOVE_PLAN = "remove_floor_plan"
+CONF_SOURCE_VACUUM = "source_vacuum"
 SESSION_IDLE_TIMEOUT = 120  # s without data before reopening the P2P session
 RECONNECT_DELAY = 5
 ERROR_BACKOFF = 30

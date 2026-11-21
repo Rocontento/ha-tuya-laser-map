@@ -18,7 +18,7 @@ import pathlib
 from .const import DOMAIN
 from .coordinator import LaserMapCoordinator
 
-PLATFORMS = [Platform.CAMERA]
+PLATFORMS = [Platform.CAMERA, Platform.VACUUM]
 
 _ENTRY = vol.Optional("config_entry_id")
 CLEAN_ROOMS_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("rooms"): vol.All(cv.ensure_list, [vol.Any(int, cv.string)]),

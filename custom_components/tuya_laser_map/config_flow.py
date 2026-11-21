@@ -11,12 +11,12 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFl
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.helpers.selector import (
-    BooleanSelector, FileSelector, FileSelectorConfig, SelectOptionDict, SelectSelector, SelectSelectorConfig, TextSelector, TextSelectorConfig, TextSelectorType,
+    BooleanSelector, EntitySelector, EntitySelectorConfig, FileSelector, FileSelectorConfig, SelectOptionDict, SelectSelector, SelectSelectorConfig, TextSelector, TextSelectorConfig, TextSelectorType,
 )
 
 from .const import (
     CONF_DEVICE_ID, CONF_DEVICE_PASSWORD, CONF_FLOOR_PLAN, CONF_HOST, CONF_LOCAL_KEY, CONF_REMOVE_PLAN, CONF_STUN,
-    CONF_THEME, CONF_USER_ID, DEFAULT_THEME, DOMAIN,
+    CONF_SOURCE_VACUUM, CONF_THEME, CONF_USER_ID, DEFAULT_THEME, DOMAIN,
 )
 from .discovery import find_ip
 
@@ -165,10 +165,12 @@ class LaserMapOptionsFlow(OptionsFlow):
                     except ValueError:
                         errors["base"] = "bad_plan"
             if not errors:
-                return self.async_create_entry(data={CONF_THEME: user_input[CONF_THEME]})
+                return self.async_create_entry(data={k: user_input[k] for k in (CONF_THEME, CONF_SOURCE_VACUUM) if k in user_input})
         theme = self.config_entry.options.get(CONF_THEME, DEFAULT_THEME)
         return self.async_show_form(step_id="init", errors=errors, data_schema=vol.Schema({
             vol.Required(CONF_THEME, default=theme): vol.In({"light": "Light", "dark": "Dark"}),
+            vol.Optional(CONF_SOURCE_VACUUM, description={"suggested_value": self.config_entry.options.get(CONF_SOURCE_VACUUM)}):
+                EntitySelector(EntitySelectorConfig(domain="vacuum")),
             vol.Optional(CONF_FLOOR_PLAN): FileSelector(FileSelectorConfig(accept=".dxf")),
             vol.Optional(CONF_REMOVE_PLAN, default=False): BooleanSelector(),
         }))

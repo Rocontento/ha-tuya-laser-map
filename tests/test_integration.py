@@ -82,4 +82,9 @@ async def test_map_camera_and_room_clean(hass):
         await hass.services.async_call(DOMAIN, "set_limits", {"walls": [[1, 2, 3, 4]], "no_go_zones": [
             {"mode": 0, "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}]}, blocking=True)
         assert coord.walls == [(1, 2, 3, 4)] and coord.nogo == [{"mode": 0, "points": [(0, 0), (10, 0), (10, 10), (0, 10)]}]
+        # room vacuum: segments = the robot's rooms, cleaning one sends the room-clean frame
+        vac = hass.states.get("vacuum.conga_rooms")
+        assert vac is not None, [s.entity_id for s in hass.states.async_all("vacuum")]
+        ent = hass.data["entity_components"]["vacuum"].get_entity("vacuum.conga_rooms")
+        assert {s.name for s in await ent.async_get_segments()} >= {"Kitchen", "Living room"}
         await hass.config_entries.async_unload(entry.entry_id)
