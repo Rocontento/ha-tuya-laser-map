@@ -1,5 +1,6 @@
-"""Render a VacuumMap as a clean "layered plan": room footprint (light), cleanable floor (grey),
-blue dock, path and live robot dot. Pillow + numpy only (both ship with Home Assistant)."""
+"""Render a VacuumMap as a true floor plan: every cell as the robot recorded it (walls and obstacles
+dark, floor light), the area to clean tinted, the cleaned swath, path, dock and live robot dot.
+Pillow + numpy only (both ship with Home Assistant)."""
 
 from __future__ import annotations
 
@@ -8,16 +9,16 @@ import io
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from .protocol.mapdata import FLOOR_NO_ROOM, VacuumMap
+from .protocol.mapdata import FLOOR_NO_ROOM, WALL, VacuumMap
 
 SCALE = 5  # output pixels per map cell
-_SS = 2  # supersampling factor for smooth edges
+BRUSH_CM = 30  # width of the cleaned swath drawn along the path
 
 THEMES = {
-    "light": dict(bg=(255, 255, 255, 255), footprint=(236, 236, 233), floor=(178, 178, 175),
-                  selected=(160, 196, 240), accent=(0, 122, 255), limit=(255, 59, 48)),
-    "dark": dict(bg=(18, 18, 20, 255), footprint=(44, 44, 48), floor=(92, 92, 98),
-                 selected=(40, 80, 130), accent=(10, 132, 255), limit=(255, 69, 58)),
+    "light": dict(bg=(255, 255, 255), floor=(228, 228, 224), wall=(58, 58, 62), target=(200, 220, 245),
+                  accent=(0, 122, 255), limit=(255, 59, 48)),
+    "dark": dict(bg=(18, 18, 20), floor=(58, 58, 62), wall=(205, 205, 210), target=(30, 62, 105),
+                 accent=(10, 132, 255), limit=(255, 69, 58)),
 }
 
 
@@ -50,18 +51,6 @@ def footprint(m: np.ndarray) -> np.ndarray:
     return _fill_holes(_open(_close(_fill_holes(m), 9), 5))
 
 
-def _smooth_layer(mask: np.ndarray, s: int, blur: float, shrink: int = 1) -> Image.Image:
-    im = _img(mask).resize((mask.shape[1] * s, mask.shape[0] * s), Image.NEAREST).filter(ImageFilter.GaussianBlur(blur))
-    im = im.point(lambda v: 255 if v > 128 else 0)
-    return im.filter(ImageFilter.MinFilter(shrink)) if shrink > 1 else im
-
-
-def _bbox(m: np.ndarray, pad: int) -> tuple[int, int, int, int]:
-    ys, xs = np.nonzero(m)
-    return (max(xs.min() - pad, 0), max(ys.min() - pad, 0),
-            min(xs.max() + 1 + pad, m.shape[1]), min(ys.max() + 1 + pad, m.shape[0]))
-
-
 def room_layers(vmap: VacuumMap) -> tuple[np.ndarray, dict[int, np.ndarray]]:
     if (cached := vmap.__dict__.get("_layers")) is not None:
         return cached
@@ -73,62 +62,62 @@ def room_layers(vmap: VacuumMap) -> tuple[np.ndarray, dict[int, np.ndarray]]:
 
 
 def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selected: set[int] | None = None,
-               theme: str = "light",
-               walls: list[tuple[int, int, int, int]] | None = None, zones: list[list[tuple[int, int]]] | None = None) -> bytes:
+               theme: str = "light", walls: list[tuple[int, int, int, int]] | None = None,
+               zones: list[list[tuple[int, int]]] | None = None,
+               targets: list[list[tuple[int, int]]] | None = None) -> bytes:
+    """``targets``: zone polygons (robot coords) being cleaned, tinted like selected rooms."""
     t = THEMES.get(theme, THEMES["light"])
-    selected = selected or set()
-    s = SCALE * _SS
-    size = (vmap.width * s, vmap.height * s)
-    rid, prints = room_layers(vmap)
-    canvas = Image.new("RGBA", size, t["bg"])
-
-    def paint(mask: np.ndarray, box, color, blur: float, shrink: int) -> None:
-        # each room is processed only inside its bounding box (full-canvas filters are ~10x slower)
-        x0, y0, x1, y1 = box
-        mask_im = _smooth_layer(mask[y0:y1, x0:x1], s, blur, shrink)
-        layer = Image.new("RGBA", mask_im.size, color + (255,))
-        layer.putalpha(mask_im)
-        canvas.alpha_composite(layer, dest=(x0 * s, y0 * s))
-
-    prints = {r: fp for r, fp in prints.items() if fp.any()}
-    boxes = {r: _bbox(fp, 3) for r, fp in prints.items()}
-    for r, fp in prints.items():
-        paint(fp, boxes[r], t["footprint"], s * 1.2, 2 * s + 1)
-    for r, fp in prints.items():
-        x0, y0, x1, y1 = boxes[r]
-        m = np.zeros_like(fp)
-        m[y0:y1, x0:x1] = _close(_open((rid == r)[y0:y1, x0:x1], 3), 5) & fp[y0:y1, x0:x1]
-        paint(m, boxes[r], t["selected"] if r in selected else t["floor"], s * 1.3, 3)
-    d = ImageDraw.Draw(canvas)
-    pts = [((vmap.origin[0] + x / 10) * s, (vmap.origin[1] - y / 10) * s) for x, y in path or []]
-    if len(pts) > 1:
-        trail = Image.new("RGBA", size, (0, 0, 0, 0))
-        ImageDraw.Draw(trail).line(pts, fill=t["accent"] + (150,), width=max(2, s // 2), joint="curve")
-        canvas.alpha_composite(trail)
+    s = SCALE
+    c = np.frombuffer(vmap.cells, np.uint8).reshape(vmap.height, vmap.width)
+    img = np.empty(c.shape + (3,), np.uint8)
+    img[:] = t["bg"]
+    floor = (c & 7) == 7
+    img[floor] = t["floor"]
+    if selected:
+        img[floor & (c != FLOOR_NO_ROOM) & np.isin(c >> 3, list(selected))] = t["target"]
+    img[c == WALL] = t["wall"]
+    canvas = Image.fromarray(img).resize((vmap.width * s, vmap.height * s), Image.NEAREST).convert("RGBA")
 
     def px(rx: float, ry: float) -> tuple[float, float]:
         cx, cy = vmap.to_cell(rx, ry)
         return cx * s, cy * s
 
+    def overlay(draw) -> None:
+        layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        draw(ImageDraw.Draw(layer))
+        canvas.alpha_composite(layer)
+
+    if targets:  # tint only the floor inside the zone, not walls/obstacles
+        mask = Image.new("L", canvas.size, 0)
+        for poly in targets:
+            ImageDraw.Draw(mask).polygon([px(*p) for p in poly], fill=255)
+        fl = Image.fromarray((floor & (c != WALL)).astype(np.uint8) * 255).resize(canvas.size, Image.NEAREST)
+        tint = Image.new("RGBA", canvas.size, t["target"] + (255,))
+        tint.putalpha(Image.fromarray(np.minimum(np.asarray(mask), np.asarray(fl))))
+        canvas.alpha_composite(tint)
+    pts = [px(x, y) for x, y in path or []]
+    if len(pts) > 1:
+        swath = max(2, round(BRUSH_CM / max(vmap.resolution_cm, 1) * s))
+        overlay(lambda d: d.line(pts, fill=t["accent"] + (55,), width=swath, joint="curve"))
+        overlay(lambda d: d.line(pts, fill=t["accent"] + (230,), width=2, joint="curve"))
     if zones:
-        overlay = Image.new("RGBA", size, (0, 0, 0, 0))
-        od = ImageDraw.Draw(overlay)
-        for poly in zones:
-            od.polygon([px(*p) for p in poly], fill=t["limit"] + (46,), outline=t["limit"] + (255,), width=max(2, s // 2))
-        canvas.alpha_composite(overlay)
+        overlay(lambda d: [d.polygon([px(*p) for p in poly], fill=t["limit"] + (40,), outline=t["limit"] + (255,),
+                                     width=3) for poly in zones])
+    d = ImageDraw.Draw(canvas)
     for x1, y1, x2, y2 in walls or []:
-        d.line([px(x1, y1), px(x2, y2)], fill=t["limit"] + (255,), width=max(3, s))
+        d.line([px(x1, y1), px(x2, y2)], fill=t["limit"] + (255,), width=4)
     # room names are drawn by the map card (localised), not baked into the image
     x, y = vmap.dock[0] * s, vmap.dock[1] * s
-    d.ellipse([x - s * 3.2, y - s * 3.2, x + s * 3.2, y + s * 3.2], fill=t["bg"][:3] + (255,), outline=t["accent"] + (255,), width=max(2, s // 2))
-    d.polygon([(x - s * 1.3, y), (x, y - s * 1.3), (x + s * 1.3, y)], fill=t["accent"] + (255,))
-    d.rectangle([x - s * 0.9, y, x + s * 0.9, y + s * 1.1], fill=t["accent"] + (255,))
+    r = s * 2.4
+    d.ellipse([x - r, y - r, x + r, y + r], fill=t["bg"] + (255,), outline=t["accent"] + (255,), width=2)
+    d.polygon([(x - r * .45, y), (x, y - r * .45), (x + r * .45, y)], fill=t["accent"] + (255,))
+    d.rectangle([x - r * .3, y, x + r * .3, y + r * .38], fill=t["accent"] + (255,))
     if pts and ((pts[-1][0] - x) ** 2 + (pts[-1][1] - y) ** 2) ** 0.5 > s * 6:  # robot = last path point; hidden when docked
         x, y = pts[-1]
-        d.ellipse([x - s * 2.6, y - s * 2.6, x + s * 2.6, y + s * 2.6], fill=(255, 255, 255, 255))
-        d.ellipse([x - s * 1.8, y - s * 1.8, x + s * 1.8, y + s * 1.8], fill=t["accent"] + (255,))
+        d.ellipse([x - s * 1.9, y - s * 1.9, x + s * 1.9, y + s * 1.9], fill=(255, 255, 255, 255))
+        d.ellipse([x - s * 1.3, y - s * 1.3, x + s * 1.3, y + s * 1.3], fill=t["accent"] + (255,))
     out = io.BytesIO()
-    canvas.resize((vmap.width * SCALE, vmap.height * SCALE), Image.LANCZOS).save(out, "PNG", optimize=True)
+    canvas.convert("RGB").save(out, "PNG", optimize=True)
     return out.getvalue()
 
 

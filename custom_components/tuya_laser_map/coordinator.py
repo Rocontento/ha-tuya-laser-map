@@ -33,6 +33,7 @@ class LaserMapCoordinator:
         self.calibration: list[dict] = []
         self.rooms: dict[int, dict] = {}
         self.selected: set[int] = set()
+        self.targets: list[list[tuple[int, int]]] = []  # zones being cleaned
         self.walls: list[tuple[int, int, int, int]] = []
         self.nogo: list[dict] = []
         self._nogo_protocol = 1
@@ -104,9 +105,9 @@ class LaserMapCoordinator:
         await asyncio.sleep(0.5)  # coalesce map + path arriving together
         self._render_pending = False
         vmap, path, sel, theme = self.vmap, list(self.path), set(self.selected), self.theme
-        walls, zones = list(self.walls), [z["points"] for z in self.nogo]
+        walls, zones, targets = list(self.walls), [z["points"] for z in self.nogo], list(self.targets)
         png, cal, rooms = await self.hass.async_add_executor_job(
-            lambda: (render_png(vmap, path, sel, theme, walls=walls, zones=zones), calibration_points(vmap),
+            lambda: (render_png(vmap, path, sel, theme, walls=walls, zones=zones, targets=targets), calibration_points(vmap),
                      room_outlines(vmap)))
         self.png, self.calibration, self.rooms = png, cal, rooms
         self._notify()
@@ -183,7 +184,7 @@ class LaserMapCoordinator:
 
     async def clean_rooms(self, rooms: list, times: int = 1) -> None:
         ids = self.resolve_rooms(rooms)
-        self.selected = set(ids)
+        self.selected, self.targets = set(ids), []
         self.request_render()
         await self.send(commands.clean_rooms(ids, times))
 
@@ -192,6 +193,8 @@ class LaserMapCoordinator:
         for z in zones:
             x1, y1, x2, y2 = (round(v) for v in z[:4])
             polys.append([(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
+        self.selected, self.targets = set(), polys
+        self.request_render()
         await self.send(commands.clean_zones(polys, times))
 
     async def goto(self, x: float, y: float) -> None:
