@@ -1,0 +1,90 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tuya laser vacuum map",
+        "menu_options": {
+          "account": "Sign in with the Tuya Smart / Smart Life app account (fetch keys)",
+          "manual": "Enter the device keys manually"
+        }
+      },
+      "account": {
+        "title": "Sign in once to fetch the device keys",
+        "description": "Your password is only used now to read the robot's keys; it is not stored. After setup everything runs locally.",
+        "data": {
+          "name": "Name",
+          "host": "Robot IP address",
+          "device_id": "Tuya device ID",
+          "app": "App the robot is paired with",
+          "email": "Account email",
+          "password": "Account password",
+          "country_code": "Country calling code"
+        }
+      },
+      "manual": {
+        "title": "Device keys",
+        "data": {
+          "name": "Name",
+          "host": "Robot IP address",
+          "device_id": "Tuya device ID",
+          "local_key": "Local key",
+          "device_password": "P2P device password",
+          "user_id": "Tuya user ID (uid)",
+          "stun_servers": "STUN servers (comma separated, e.g. stun:1.2.3.4:3478)"
+        }
+      }
+    },
+    "error": {
+      "auth": "Sign-in failed. Check the app, email, password and country code.",
+      "no_p2p": "The account worked but the robot did not return P2P keys."
+    },
+    "abort": {
+      "already_configured": "This robot is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "theme": "Map style"
+        }
+      }
+    }
+  },
+  "entity": {
+    "camera": {
+      "map": {
+        "name": "Map"
+      }
+    }
+  },
+  "services": {
+    "clean_rooms": {
+      "name": "Clean rooms",
+      "description": "Clean the given rooms (names or ids from the map).",
+      "fields": {
+        "config_entry_id": {"name": "Robot", "description": "Needed when several robots are configured."},
+        "rooms": {"name": "Rooms", "description": "Room names or ids."},
+        "times": {"name": "Passes", "description": "Cleaning passes per room."}
+      }
+    },
+    "clean_zone": {
+      "name": "Clean zones",
+      "description": "Clean rectangles given in robot coordinates [x1, y1, x2, y2] (as xiaomi-vacuum-map-card sends them).",
+      "fields": {
+        "config_entry_id": {"name": "Robot", "description": "Needed when several robots are configured."},
+        "zones": {"name": "Zones", "description": "List of [x1, y1, x2, y2]."},
+        "times": {"name": "Passes", "description": "Cleaning passes per zone."}
+      }
+    },
+    "goto": {
+      "name": "Go to point",
+      "description": "Send the robot to a point in robot coordinates.",
+      "fields": {
+        "config_entry_id": {"name": "Robot", "description": "Needed when several robots are configured."},
+        "x": {"name": "X", "description": "Robot X coordinate."},
+        "y": {"name": "Y", "description": "Robot Y coordinate."}
+      }
+    }
+  }
+}

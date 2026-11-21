@@ -1,0 +1,117 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mapa de aspiradora láser Tuya",
+        "menu_options": {
+          "account": "Iniciar sesión con la cuenta de la app Tuya Smart / Smart Life (obtener claves)",
+          "manual": "Introducir las claves del dispositivo a mano"
+        }
+      },
+      "account": {
+        "title": "Inicia sesión una vez para obtener las claves",
+        "description": "La contraseña solo se usa ahora para leer las claves del robot; no se guarda. Después todo funciona en local.",
+        "data": {
+          "name": "Nombre",
+          "host": "IP del robot",
+          "device_id": "ID de dispositivo Tuya",
+          "app": "App con la que está vinculado",
+          "email": "Email de la cuenta",
+          "password": "Contraseña de la cuenta",
+          "country_code": "Prefijo telefónico del país"
+        }
+      },
+      "manual": {
+        "title": "Claves del dispositivo",
+        "data": {
+          "name": "Nombre",
+          "host": "IP del robot",
+          "device_id": "ID de dispositivo Tuya",
+          "local_key": "Clave local",
+          "device_password": "Contraseña P2P del dispositivo",
+          "user_id": "ID de usuario Tuya (uid)",
+          "stun_servers": "Servidores STUN (separados por comas)"
+        }
+      }
+    },
+    "error": {
+      "auth": "No se pudo iniciar sesión. Revisa la app, el email, la contraseña y el país.",
+      "no_p2p": "La cuenta funciona pero el robot no devolvió claves P2P."
+    },
+    "abort": {
+      "already_configured": "Este robot ya está configurado."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "theme": "Estilo del mapa"
+        }
+      }
+    }
+  },
+  "entity": {
+    "camera": {
+      "map": {
+        "name": "Mapa"
+      }
+    }
+  },
+  "services": {
+    "clean_rooms": {
+      "name": "Limpiar habitaciones",
+      "description": "Limpia las habitaciones indicadas (nombres o ids del mapa).",
+      "fields": {
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        },
+        "rooms": {
+          "name": "Rooms",
+          "description": "Room names or ids."
+        },
+        "times": {
+          "name": "Passes",
+          "description": "Cleaning passes per room."
+        }
+      }
+    },
+    "clean_zone": {
+      "name": "Limpiar zonas",
+      "description": "Limpia rectángulos en coordenadas del robot [x1, y1, x2, y2].",
+      "fields": {
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        },
+        "zones": {
+          "name": "Zones",
+          "description": "List of [x1, y1, x2, y2]."
+        },
+        "times": {
+          "name": "Passes",
+          "description": "Cleaning passes per zone."
+        }
+      }
+    },
+    "goto": {
+      "name": "Ir a un punto",
+      "description": "Envía el robot a un punto en coordenadas del robot.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        },
+        "x": {
+          "name": "X",
+          "description": "Robot X coordinate."
+        },
+        "y": {
+          "name": "Y",
+          "description": "Robot Y coordinate."
+        }
+      }
+    }
+  }
+}

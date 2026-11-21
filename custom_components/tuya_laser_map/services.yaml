@@ -1,0 +1,54 @@
+clean_rooms:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    rooms:
+      required: true
+      example: '["Kitchen", 9]'
+      selector:
+        object:
+    times:
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+clean_zone:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    zones:
+      required: true
+      example: "[[-1200, 300, -400, -500]]"
+      selector:
+        object:
+    times:
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+goto:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    x:
+      required: true
+      selector:
+        number:
+          min: -32768
+          max: 32767
+          mode: box
+    y:
+      required: true
+      selector:
+        number:
+          min: -32768
+          max: 32767
+          mode: box
