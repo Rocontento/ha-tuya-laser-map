@@ -55,6 +55,8 @@ class MapCamera(Camera):
             "map_id": c.vmap.map_id if c.vmap else None,
             "resolution_cm": c.vmap.resolution_cm if c.vmap else None,
             "path_points": [len(p) for p in c.path],
+            "current_room": c.current_room,
+            "visited_rooms": c.visited_rooms,
             "updated": c.updated,
             "walls": [list(w) for w in c.walls],
             "no_go_zones": [{"mode": z["mode"],  # 0 all, 1 no sweep, 2 no mop

@@ -21,6 +21,20 @@ const rectPts = (a, b) => {
   return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]];
 };
 const clone = (o) => JSON.parse(JSON.stringify(o));
+const inPoly = (pt, poly) => {  // ray casting
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+const CLEAN_MODES = [["sweep", "Aspirar"], ["mop", "Fregar"], ["sweep_and_mop", "Ambos"]];
+const LEVELS = { low: "Baja", medium: "Media", high: "Alta" };
+// tuya-local entity suffixes on the robot's device: [life sensor, reset button, label]
+const PARTS = [["filter_life", "reset_filter", "Filtro"], ["side_brush_lifetime", "reset_edge_brush", "Cepillo lateral"],
+  ["rolling_brush_lifetime", "reset_roll_brush", "Cepillo principal"], ["duster_cloth_lifetime", "reset_mop_cloth", "Mopa"]];
+const ACTIVE = ["cleaning", "paused", "returning"];
 
 class TuyaLaserMapCard extends HTMLElement {
   setConfig(config) {
@@ -32,6 +46,7 @@ class TuyaLaserMapCard extends HTMLElement {
     this._times = 1;
     this._draft = null;    // limits being edited: {walls, zones}
     this._sel = null;      // {kind: "wall"|"zone"|"clean", i}
+    this._z = { s: 1, x: 0, y: 0 };  // zoom/pan of the map
     if (!this.shadowRoot) this._build();
   }
 
@@ -42,13 +57,33 @@ class TuyaLaserMapCard extends HTMLElement {
 
   getCardSize() { return 9; }
 
+  // --- the robot's other entities (tuya-local), found on the device of the vacuum we mirror ---------
+  _relatedIds(hass, vac) {
+    const src = (vac && vac.attributes.source_vacuum) || this._cfg.vacuum;
+    const ents = hass.entities || {}, dev = ents[src] && ents[src].device_id;
+    if (!dev) return [];
+    if (this._relKey !== dev) {
+      this._relKey = dev;
+      this._ids = Object.keys(ents).filter((id) => ents[id].device_id === dev);
+    }
+    return this._ids;
+  }
+
+  _ent(domain, suffix) {  // entity id on the robot's device ending in _<suffix>
+    return (this._ids || []).find((id) => id.startsWith(domain + ".") && id.endsWith("_" + suffix));
+  }
+
+  _state(domain, suffix) { const id = this._ent(domain, suffix); return id && this._hass.states[id]; }
+
   set hass(hass) {
     this._hass = hass;
     const st = hass.states[this._cfg.entity];
     const vac = this._cfg.vacuum && hass.states[this._cfg.vacuum];
-    if (st === this._st && vac === this._vac) return;
+    const rel = this._relatedIds(hass, vac).map((e) => hass.states[e]);
+    if (st === this._st && vac === this._vac && rel.every((r, i) => r === (this._rel || [])[i])) return;
     this._st = st;
     this._vac = vac;
+    this._rel = rel;
     if (!st) return;
     const a = st.attributes;
     if (a.entity_picture && this._img.getAttribute("src") !== a.entity_picture) this._img.src = a.entity_picture;
@@ -72,16 +107,14 @@ class TuyaLaserMapCard extends HTMLElement {
   }
 
   _pt(ev) {
-    const p = this._svg.createSVGPoint();
-    p.x = ev.clientX;
-    p.y = ev.clientY;
-    const q = p.matrixTransform(this._svg.getScreenCTM().inverse());
-    return this._toRobot(q.x, q.y);
+    const r = this._svg.getBoundingClientRect();
+    return this._toRobot((ev.clientX - r.left) / r.width * this._img.naturalWidth,
+      (ev.clientY - r.top) / r.height * this._img.naturalHeight);
   }
 
   get _k() {  // image px per screen px, so handles stay finger-sized
     const w = this._svg.clientWidth || 1;
-    return (this._img.naturalWidth || w) / w;
+    return (this._img.naturalWidth || w) / w / this._z.s;
   }
 
   get _unitsPerMeter() { return 1000 / ((this._st && this._st.attributes.resolution_cm) || 5); }
@@ -105,10 +138,34 @@ class TuyaLaserMapCard extends HTMLElement {
           border-radius: 7px; color: var(--primary-text-color); cursor: pointer; }
         .seg button.on { background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
         .map { position: relative; border-radius: 12px; overflow: hidden; background: #fff; user-select: none;
-          -webkit-user-select: none; touch-action: pan-y; }
+          -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
         .map.editing { touch-action: none; }
+        .map.zoomed { touch-action: none; }
+        .stage { position: relative; transform-origin: 0 0; }
         .map img { display: block; width: 100%; height: auto; }
         .map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+        .zoom { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 6px; }
+        .zoom button { width: 32px; height: 32px; border: 0; border-radius: 9px; background: rgba(255,255,255,.92);
+          box-shadow: 0 1px 4px rgba(0,0,0,.18); font-size: 18px; line-height: 1; color: #1c1c1e; cursor: pointer; }
+        .menu { position: absolute; display: none; flex-direction: column; min-width: 170px; background: rgba(255,255,255,.97);
+          border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.22); overflow: hidden; z-index: 2; }
+        .menu.show { display: flex; }
+        .menu button { border: 0; background: none; text-align: left; padding: 11px 14px; font: inherit; font-size: 14px;
+          color: #1c1c1e; cursor: pointer; }
+        .menu button + button { border-top: 1px solid rgba(60,60,67,.14); }
+        .alert { display: none; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(255,59,48,.12);
+          color: #FF3B30; font-size: 14px; font-weight: 500; }
+        .alert.show { display: block; }
+        .opts { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; }
+        .opts:empty { display: none; }
+        .opt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--secondary-text-color); }
+        .maint { margin-top: 12px; font-size: 14px; }
+        .maint summary { cursor: pointer; color: var(--secondary-text-color); font-size: 13px; }
+        .row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+        .row + .row { border-top: 1px solid rgba(60,60,67,.12); }
+        .row .name { flex: 1; }
+        .row .val { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+        .row .val.due { color: #FF3B30; font-weight: 600; }
         .drag { cursor: grab; touch-action: none; }
         .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
         .btn { border: 0; border-radius: 10px; padding: 9px 14px; font: inherit; font-size: 14px; font-weight: 500;
@@ -128,21 +185,136 @@ class TuyaLaserMapCard extends HTMLElement {
           <div><div class="title"></div><div class="sub"></div></div>
           <div class="seg"><button data-m="clean">Limpiar</button><button data-m="limits">Límites</button></div>
         </div>
-        <div class="map"><img alt=""><svg xmlns="${NS}"></svg><div class="toast"></div></div>
+        <div class="alert"></div>
+        <div class="map"><div class="stage"><img alt=""><svg xmlns="${NS}"></svg></div>
+          <div class="zoom"><button data-z="1.5" title="Acercar">+</button><button data-z="0.667" title="Alejar">−</button></div>
+          <div class="menu"></div><div class="toast"></div></div>
+        <div class="opts"></div>
         <div class="bar"></div>
+        <details class="maint"><summary>Mantenimiento</summary><div class="parts"></div></details>
       </ha-card>`;
     this._img = root.querySelector("img");
     this._svg = root.querySelector("svg");
     this._bar = root.querySelector(".bar");
     this._mapEl = root.querySelector(".map");
+    this._stage = root.querySelector(".stage");
+    this._menu = root.querySelector(".menu");
+    root.querySelectorAll(".zoom button").forEach((b) => b.addEventListener("click", () => {
+      const r = this._mapEl.getBoundingClientRect();
+      this._zoomAt(this._z.s * Number(b.dataset.z), r.width / 2, r.height / 2);
+    }));
+    this._gestures();
     this._img.addEventListener("load", () => {
       this._svg.setAttribute("viewBox", `0 0 ${this._img.naturalWidth} ${this._img.naturalHeight}`);
       this._render();
     });
-    root.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => this._setMode(b.dataset.m)));
+    root.querySelectorAll(".head .seg button").forEach((b) => b.addEventListener("click", () => this._setMode(b.dataset.m)));
     this._svg.addEventListener("pointerdown", (ev) => {
       if (ev.target === this._svg && this._sel) { this._sel = null; this._render(); }
+      this._menu.classList.remove("show");
     });
+  }
+
+  // --- zoom, pan, long press ----------------------------------------------------------------
+  _zoomAt(s, cx, cy) {  // new scale s, keeping the map point under (cx, cy) (px inside .map) still
+    const z = this._z, w = this._mapEl.clientWidth, h = this._mapEl.clientHeight;
+    s = Math.min(5, Math.max(1, s));
+    z.x = cx - (cx - z.x) * (s / z.s);
+    z.y = cy - (cy - z.y) * (s / z.s);
+    z.s = s;
+    this._pan(0, 0, w, h);
+  }
+
+  _pan(dx, dy, w = this._mapEl.clientWidth, h = this._mapEl.clientHeight) {
+    const z = this._z;
+    z.x = Math.min(0, Math.max(w - w * z.s, z.x + dx));
+    z.y = Math.min(0, Math.max(h - h * z.s, z.y + dy));
+    this._stage.style.transform = z.s === 1 ? "" : `translate(${z.x}px, ${z.y}px) scale(${z.s})`;
+    this._mapEl.classList.toggle("zoomed", z.s > 1);
+    clearTimeout(this._zoomT);  // redraw handles at finger size once the gesture settles
+    this._zoomT = setTimeout(() => this._render(), 120);
+  }
+
+  _gestures() {
+    const el = this._mapEl, pts = new Map();
+    let start = null, pinch = null, moved = false, timer = null;
+    const local = (e) => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    el.addEventListener("pointerdown", (e) => {
+      if (e.target.closest(".zoom, .menu")) return;
+      pts.set(e.pointerId, local(e));
+      if (pts.size === 2) {
+        clearTimeout(timer);
+        const [a, b] = [...pts.values()];
+        pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: this._z.s };
+        moved = true;
+      } else if (pts.size === 1) {
+        start = local(e);
+        moved = false;
+        pinch = null;
+        if (this._mode === "clean") {
+          timer = setTimeout(() => { moved = true; this._longPress(e); }, 550);
+        }
+      }
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!pts.has(e.pointerId)) return;
+      const p = local(e), prev = pts.get(e.pointerId);
+      pts.set(e.pointerId, p);
+      if (pinch && pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        this._zoomAt(pinch.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      } else if (pts.size === 1 && start) {
+        if (Math.hypot(p[0] - start[0], p[1] - start[1]) > 8) { moved = true; clearTimeout(timer); }
+        if (moved && this._z.s > 1) this._pan(p[0] - prev[0], p[1] - prev[1]);
+      }
+    });
+    const end = (e) => {
+      pts.delete(e.pointerId);
+      clearTimeout(timer);
+      if (!pts.size && moved) {  // a pan, pinch or long press is not also a tap on a room
+        this._noClick = true;
+        setTimeout(() => { this._noClick = false; }, 60);
+      }
+      if (pts.size < 2) pinch = null;
+    };
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+    el.addEventListener("wheel", (e) => {  // trackpad pinch / ctrl+wheel
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const [x, y] = local(e);
+      this._zoomAt(this._z.s * Math.exp(-e.deltaY / 200), x, y);
+    }, { passive: false });
+  }
+
+  _longPress(ev) {
+    if (!this._toRobot) return;
+    const pt = this._pt(ev), rooms = (this._st && this._st.attributes.rooms) || {};
+    const hit = Object.entries(rooms).find(([, r]) => inPoly(pt, r.outline));
+    const names = this._cfg.room_names || {}, m = this._menu;
+    m.replaceChildren();
+    const item = (label, fn) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.addEventListener("click", async () => { m.classList.remove("show"); await fn(); });
+      m.appendChild(b);
+    };
+    item("Ir aquí", async () => {
+      if (await this._call("tuya_laser_map", "goto", { x: pt[0], y: pt[1] })) this._toast("Yendo al punto");
+    });
+    if (hit) {
+      const [id, r] = hit;
+      item(`Limpiar ${names[id] || r.name}`, async () => {
+        if (await this._call("tuya_laser_map", "clean_rooms", { rooms: [Number(id)], times: this._times })) {
+          this._toast("Enviado al robot");
+        }
+      });
+    }
+    const r = this._mapEl.getBoundingClientRect();
+    m.style.left = `${Math.min(ev.clientX - r.left, r.width - 180)}px`;
+    m.style.top = `${Math.min(ev.clientY - r.top, r.height - 100)}px`;
+    m.classList.add("show");
+    if (navigator.vibrate) navigator.vibrate(10);
   }
 
   _setMode(m) {
@@ -194,19 +366,23 @@ class TuyaLaserMapCard extends HTMLElement {
     const a = this._st.attributes, k = this._k, svg = this._svg;
     svg.replaceChildren();
     this._mapEl.classList.toggle("editing", this._mode === "limits");
-    this.shadowRoot.querySelectorAll(".seg button").forEach((b) => b.classList.toggle("on", b.dataset.m === this._mode));
+    this.shadowRoot.querySelectorAll(".head .seg button").forEach((b) => b.classList.toggle("on", b.dataset.m === this._mode));
     const names = this._cfg.room_names || {};
     const limits = this._mode === "limits" ? this._draft : this._limitsFromState();
 
-    // rooms: tap to select (clean mode), always labelled
+    // rooms: tap to select (clean mode), always labelled; while a job runs, the robot's room is outlined
+    const active = this._vac && ACTIVE.includes(this._vac.state);
+    const cur = active ? a.current_room : null, done = new Set(active ? (a.visited_rooms || []) : []);
     for (const [id, r] of Object.entries(a.rooms || {})) {
-      const on = this._rooms.has(Number(id));
-      const p = this._el("polygon", { points: this._poly(r.outline), fill: on ? BLUE : "transparent",
-        "fill-opacity": on ? 0.28 : 0, stroke: "none" });
+      const on = this._rooms.has(Number(id)), here = Number(id) === cur;
+      const p = this._el("polygon", { points: this._poly(r.outline), fill: on || here ? BLUE : "transparent",
+        "fill-opacity": on ? 0.28 : here ? 0.1 : 0, stroke: here ? BLUE : "none", "stroke-width": 2.5 * k,
+        "stroke-linejoin": "round" });
       if (this._mode !== "clean") p.setAttribute("pointer-events", "none");
       else {
         p.style.cursor = "pointer";
         p.addEventListener("click", () => {
+          if (this._noClick) return;
           this._rooms.has(Number(id)) ? this._rooms.delete(Number(id)) : this._rooms.add(Number(id));
           this._zones = [];
           this._render();
@@ -218,7 +394,7 @@ class TuyaLaserMapCard extends HTMLElement {
       const t = this._el("text", { x, y, "text-anchor": "middle", "dominant-baseline": "middle", "font-size": 13 * k,
         "font-weight": 600, fill: "#1c1c1e", stroke: "#fff", "stroke-width": 3.5 * k, "paint-order": "stroke",
         "font-family": "-apple-system, system-ui, sans-serif", "pointer-events": "none" });
-      t.textContent = names[id] || r.name;
+      t.textContent = (done.has(Number(id)) && Number(id) !== cur ? "✓ " : "") + (names[id] || r.name);
     }
 
     // no-go zones and walls (editable in limits mode)
@@ -316,14 +492,96 @@ class TuyaLaserMapCard extends HTMLElement {
   _renderBar() {
     const root = this.shadowRoot;
     root.querySelector(".title").textContent = this._cfg.title || "Mapa";
-    const vac = this._vac;
-    root.querySelector(".sub").textContent = vac
-      ? [this._hass.formatEntityState ? this._hass.formatEntityState(vac) : vac.state,
-         vac.attributes.battery_level != null ? `${vac.attributes.battery_level} %` : ""].filter(Boolean).join(" · ")
-      : "";
+    const vac = this._vac, a = this._st ? this._st.attributes : {}, val = (d, sfx) => {
+      const e = this._state(d, sfx);
+      return e && !["unknown", "unavailable"].includes(e.state) ? e.state : null;
+    };
+    const parts = [];
+    if (vac) parts.push(this._hass.formatEntityState ? this._hass.formatEntityState(vac) : vac.state);
+    if (vac && ACTIVE.includes(vac.state)) {
+      const r = a.rooms && a.current_room != null && a.rooms[a.current_room];
+      if (r) parts.push((this._cfg.room_names || {})[a.current_room] || r.name);
+      if (val("sensor", "cleaning_area") != null) parts.push(`${val("sensor", "cleaning_area")} m²`);
+      if (val("sensor", "cleaning_time") != null) parts.push(`${val("sensor", "cleaning_time")} min`);
+    }
+    const bat = val("sensor", "battery") ?? (vac && vac.attributes.battery_level);
+    if (bat != null) parts.push(`${bat} %`);
+    root.querySelector(".sub").textContent = parts.join(" · ");
+    this._renderAlert(vac);
+    this._renderOpts();
+    this._renderParts();
     this._bar.replaceChildren();
     if (!this._st || !this._toPx) return;
     this._mode === "limits" ? this._limitsBar() : this._cleanBar();
+  }
+
+  _renderAlert(vac) {
+    const el = this.shadowRoot.querySelector(".alert"), prob = this._state("binary_sensor", "problem");
+    const err = (prob && prob.state === "on") || (vac && vac.state === "error");
+    const desc = prob && prob.attributes.description;
+    el.textContent = err ? `⚠︎ ${desc && desc !== "ok" ? desc : "El robot tiene un problema"}` : "";
+    el.classList.toggle("show", !!err);
+  }
+
+  _chips(parent, label, options, current, onPick) {
+    const wrap = Object.assign(document.createElement("div"), { className: "opt" });
+    wrap.appendChild(document.createTextNode(label));
+    const seg = Object.assign(document.createElement("div"), { className: "seg" });
+    for (const [v, text] of options) {
+      const b = Object.assign(document.createElement("button"), { textContent: text, className: v === current ? "on" : "" });
+      b.addEventListener("click", () => v !== current && onPick(v));
+      seg.appendChild(b);
+    }
+    wrap.appendChild(seg);
+    parent.appendChild(wrap);
+  }
+
+  _renderOpts() {
+    const el = this.shadowRoot.querySelector(".opts");
+    el.replaceChildren();
+    if (this._mode !== "clean") return;
+    const mode = this._state("select", "cleaning_mode"), water = this._state("select", "mopping"), vac = this._vac;
+    const pick = (ent, option) => this._call("select", "select_option", { entity_id: ent.entity_id, option });
+    if (mode) this._chips(el, "", CLEAN_MODES.filter(([v]) => mode.attributes.options.includes(v)), mode.state, (v) => pick(mode, v));
+    const m = mode ? mode.state : "sweep";
+    const speeds = (vac && vac.attributes.fan_speed_list) || [];
+    if (m !== "mop" && speeds.length) {
+      this._chips(el, "Aspiración", speeds.map((v) => [v, LEVELS[v.toLowerCase()] || v]), vac.attributes.fan_speed,
+        (v) => this._call("vacuum", "set_fan_speed", { entity_id: this._cfg.vacuum, fan_speed: v }));
+    }
+    if (m !== "sweep" && water) {
+      this._chips(el, "Agua", water.attributes.options.filter((v) => v !== "off").map((v) => [v, LEVELS[v] || v]),
+        water.state, (v) => pick(water, v));
+    }
+  }
+
+  _renderParts() {
+    const el = this.shadowRoot.querySelector(".parts");
+    el.replaceChildren();
+    const row = (name, value, due, btn) => {
+      const r = Object.assign(document.createElement("div"), { className: "row" });
+      r.append(Object.assign(document.createElement("span"), { className: "name", textContent: name }));
+      if (value != null) r.append(Object.assign(document.createElement("span"), { className: `val ${due ? "due" : ""}`, textContent: value }));
+      if (btn) r.append(btn);
+      el.appendChild(r);
+    };
+    const button = (label, ent, confirmText, done) => {
+      const b = Object.assign(document.createElement("button"), { className: "btn", textContent: label });
+      b.addEventListener("click", async () => {
+        if (confirmText && !confirm(confirmText)) return;
+        if (await this._call("button", "press", { entity_id: ent })) this._toast(done);
+      });
+      return b;
+    };
+    for (const [life, reset, name] of PARTS) {
+      const s = this._state("sensor", life), btn = this._ent("button", reset);
+      if (!s || isNaN(Number(s.state))) continue;
+      const h = Math.round(Number(s.state) / 60);  // minutes left; negative = overdue
+      row(name, h > 0 ? `${h} h` : "Cambiar", h <= 0,
+        btn && button("Reiniciar", btn, `¿Reiniciar el contador de ${name.toLowerCase()}? Hazlo solo si lo acabas de cambiar.`, "Contador reiniciado"));
+    }
+    const empty = this._ent("button", "empty_dust");
+    if (empty) row("Depósito de polvo", null, false, button("Vaciar", empty, null, "Vaciando depósito"));
   }
 
   _cleanBar() {
@@ -344,7 +602,13 @@ class TuyaLaserMapCard extends HTMLElement {
     if (vac && busy) {
       this._btn("Pausar", "", () => this._call("vacuum", "pause", { entity_id: vac }));
     }
-    if (vac) this._btn("Base", "", () => this._call("vacuum", "return_to_base", { entity_id: vac }));
+    if (vac && (busy || state === "paused")) this._btn("Parar", "", () => this._call("vacuum", "stop", { entity_id: vac }));
+    if (vac) {
+      this._btn("Localizar", "", async () => {
+        if (await this._call("vacuum", "locate", { entity_id: vac })) this._toast("El robot está sonando");
+      });
+      this._btn("Base", "", () => this._call("vacuum", "return_to_base", { entity_id: vac }));
+    }
     const n = this._zones.length || this._rooms.size;
     const label = this._zones.length ? `Limpiar ${n} zona${n > 1 ? "s" : ""}`
       : this._rooms.size ? `Limpiar ${n} habitaci${n > 1 ? "ones" : "ón"}` : state === "paused" ? "Reanudar" : "Limpiar todo";
@@ -363,7 +627,7 @@ class TuyaLaserMapCard extends HTMLElement {
       if (ok) { this._toast("Enviado al robot"); this._zones = []; this._rooms.clear(); this._sel = null; this._render(); }
     });
     this._hint(this._zones.length ? "Arrastra la zona; tócala para ver sus esquinas y estirarla."
-      : "Toca habitaciones para elegirlas, o añade una zona.");
+      : "Toca habitaciones para elegirlas, o añade una zona. Mantén pulsado un punto para ir allí o limpiar esa habitación.");
   }
 
   _limitsBar() {

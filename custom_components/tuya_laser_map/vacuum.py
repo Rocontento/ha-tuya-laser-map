@@ -85,6 +85,10 @@ class RoomVacuum(StateVacuumEntity):
         return st.attributes.get(name) if st else None
 
     @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"source_vacuum": self._source}  # the map card finds the robot's other entities through it
+
+    @property
     def fan_speed(self) -> str | None:
         return self._src_attr("fan_speed")
 

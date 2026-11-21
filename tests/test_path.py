@@ -31,3 +31,18 @@ def test_current_room_from_last_point():
     assert c.current_room == 3
     c.path = [[(0, 0), (400, 0)]]           # far away: unknown
     assert c.current_room is None
+
+
+def test_visited_rooms_in_order():
+    from custom_components.tuya_laser_map.protocol.mapdata import Room
+    cells = bytearray(100 * 100)
+    for y in range(40, 60):
+        for x in range(30, 50):
+            cells[y * 100 + x] = (3 << 3) | 7   # room 3: cells x 30..49
+        for x in range(50, 70):
+            cells[y * 100 + x] = (4 << 3) | 7   # room 4: cells x 50..69
+    c = LaserMapCoordinator.__new__(LaserMapCoordinator)
+    c.vmap = VacuumMap(1, 100, 100, (50.0, 50.0), 5, (50.0, 50.0), bytes(cells), {3: Room(3, "A"), 4: Room(4, "B")})
+    c.path = [[(-150, 0), (150, 0)]]            # from room 3 into room 4
+    assert c.visited_rooms == [3, 4]
+    assert c.current_room == 4

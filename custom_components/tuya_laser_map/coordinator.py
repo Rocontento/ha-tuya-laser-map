@@ -103,13 +103,10 @@ class LaserMapCoordinator:
             return
         self.request_render()
 
-    @property
-    def current_room(self) -> int | None:
-        """Room under the robot (last path point), the nearest room cell within 30 cm if it is on a border."""
+    def _room_at(self, pt: tuple[int, int]) -> int | None:
+        """Room under a robot point, or the nearest room cell within 30 cm if it is on a border."""
         vm = self.vmap
-        if vm is None or not self.path or not self.path[-1]:
-            return None
-        cx, cy = (int(v) for v in vm.to_cell(*self.path[-1][-1]))
+        cx, cy = (int(v) for v in vm.to_cell(*pt))
         for r in range(0, 7):
             for y in range(cy - r, cy + r + 1):
                 for x in range(cx - r, cx + r + 1):
@@ -118,6 +115,25 @@ class LaserMapCoordinator:
                         if c & 7 == 7 and c != FLOOR_NO_ROOM and (c >> 3) in vm.rooms:
                             return c >> 3
         return None
+
+    @property
+    def current_room(self) -> int | None:
+        """Room under the robot (last path point)."""
+        if self.vmap is None or not self.path or not self.path[-1]:
+            return None
+        return self._room_at(self.path[-1][-1])
+
+    @property
+    def visited_rooms(self) -> list[int]:
+        """Rooms the current job's path went through, in order. ponytail: samples every 10th point."""
+        if self.vmap is None:
+            return []
+        seen: dict[int, None] = {}
+        for seg in self.path:
+            for pt in seg[::10] + seg[-1:]:
+                if (rid := self._room_at(pt)) is not None:
+                    seen[rid] = None
+        return list(seen)
 
     def _add_path(self, pts: list[tuple[int, int]]) -> None:
         """The robot restarts its path file on pause/resume: keep earlier segments of the same job.
