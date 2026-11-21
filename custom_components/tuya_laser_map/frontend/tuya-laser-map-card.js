@@ -339,7 +339,7 @@ class TuyaLaserMapCard extends HTMLElement {
     if (this._sel && this._sel.kind === "clean") {
       this._btn("Quitar zona", "danger", () => { this._zones.splice(this._sel.i, 1); this._sel = null; this._render(); });
     }
-    this._btn(`×${this._times}`, "", () => { this._times = (this._times % 3) + 1; this._renderBar(); });
+    this._btn(`${this._times} pasada${this._times > 1 ? "s" : ""}`, "", () => { this._times = (this._times % 3) + 1; this._renderBar(); });
     this._bar.appendChild(Object.assign(document.createElement("div"), { className: "spacer" }));
     if (vac && busy) {
       this._btn("Pausar", "", () => this._call("vacuum", "pause", { entity_id: vac }));
