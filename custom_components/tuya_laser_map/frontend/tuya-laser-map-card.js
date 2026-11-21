@@ -136,11 +136,11 @@ class TuyaLaserMapCard extends HTMLElement {
     const root = this.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
-        ha-card { padding: 14px; overflow: hidden;
+        ha-card { padding: 14px; overflow: hidden; container-type: inline-size;
           --map-bg: #fff; --label: #1c1c1e; --label-halo: #fff; --float: rgba(255,255,255,.94); --float-text: #1c1c1e;
-          --fill: rgba(120,120,128,.14); --sep: rgba(60,60,67,.14); }
+          --fill: rgba(120,120,128,.14); --fill-soft: rgba(120,120,128,.07); --sep: rgba(60,60,67,.12); }
         ha-card.dark { --map-bg: #121214; --label: #f2f2f7; --label-halo: #121214; --float: rgba(44,44,46,.94);
-          --float-text: #f2f2f7; --fill: rgba(120,120,128,.26); --sep: rgba(235,235,245,.14); }
+          --float-text: #f2f2f7; --fill: rgba(120,120,128,.26); --fill-soft: rgba(120,120,128,.12); --sep: rgba(235,235,245,.1); }
         ha-icon { display: inline-flex; }
         .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
         .title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
@@ -170,14 +170,29 @@ class TuyaLaserMapCard extends HTMLElement {
         .alert { display: none; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(255,59,48,.12);
           color: #FF3B30; font-size: 14px; font-weight: 500; }
         .alert.show { display: block; }
-        .opts { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        /* settings: one grouped list, label left, control right, same width on every row */
+        .opts { display: flex; flex-direction: column; margin-top: 12px; padding: 2px 12px; border-radius: 12px;
+          background: var(--fill-soft); }
         .opts:empty { display: none; }
-        .opt { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--secondary-text-color); }
-        .opt .lbl { display: inline-flex; align-items: center; gap: 6px; min-width: 92px; }
-        .opt .seg { flex: 1; max-width: 340px; }
+        .opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0;
+          font-size: 14px; color: var(--primary-text-color); }
+        .opt + .opt { border-top: 1px solid var(--sep); }
+        .opt .lbl { display: inline-flex; align-items: center; gap: 8px; }
+        .opt .lbl ha-icon { color: var(--secondary-text-color); }
+        .opt .seg { flex: 0 1 330px; }
         .opt .seg button { flex: 1; justify-content: center; padding: 6px 6px; }
-        .maint { margin-top: 12px; font-size: 14px; }
-        .maint summary { cursor: pointer; color: var(--secondary-text-color); font-size: 13px; }
+        @container (max-width: 440px) {
+          .opt .seg { flex: 1 1 auto; }
+          .opt .lbl { min-width: 104px; }
+          .opt .seg button ha-icon { display: none; }
+        }
+        .maint { margin-top: 12px; font-size: 14px; padding: 10px 12px; border-radius: 12px; background: var(--fill-soft); }
+        .maint summary { cursor: pointer; font-size: 14px; list-style: none; display: flex; align-items: center; gap: 8px; }
+        .maint summary::-webkit-details-marker { display: none; }
+        .maint summary::after { content: "›"; margin-left: auto; color: var(--secondary-text-color); font-size: 18px;
+          transition: transform .2s; }
+        .maint[open] summary::after { transform: rotate(90deg); }
+        .maint[open] summary { margin-bottom: 4px; }
         .row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
         .row + .row { border-top: 1px solid rgba(60,60,67,.12); }
         .row .name { flex: 1; display: inline-flex; align-items: center; gap: 8px; }
@@ -190,8 +205,9 @@ class TuyaLaserMapCard extends HTMLElement {
           background: var(--fill); color: var(--primary-text-color); cursor: pointer;
           display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
         .btn.on, .btn.primary { background: ${BLUE}; color: #fff; }
-        .btn.primary { flex: 1; min-width: 150px; padding: 13px 18px; border-radius: 14px; font-size: 15px; font-weight: 600; }
-        .tools, .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; }
+        .btn.primary { flex: 1 1 220px; padding: 13px 18px; border-radius: 14px; font-size: 15px; font-weight: 600; }
+        @container (min-width: 560px) { .btn.primary { flex: 0 0 260px; margin-left: auto; } }
+        .tools, .actions { display: flex; flex-wrap: wrap; gap: 10px 8px; align-items: center; width: 100%; }
         .round { border: 0; background: none; padding: 0; font: inherit; color: var(--primary-text-color); cursor: pointer;
           display: inline-flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; min-width: 52px; }
         .round span { width: 46px; height: 46px; border-radius: 50%; background: var(--fill); display: grid; place-items: center; }
@@ -216,7 +232,7 @@ class TuyaLaserMapCard extends HTMLElement {
           <div class="menu"></div><div class="toast"></div></div>
         <div class="opts"></div>
         <div class="bar"></div>
-        <details class="maint"><summary>Mantenimiento</summary><div class="parts"></div></details>
+        <details class="maint"><summary><ha-icon icon="mdi:wrench-outline" style="--mdc-icon-size:18px;color:var(--secondary-text-color)"></ha-icon>Mantenimiento</summary><div class="parts"></div></details>
       </ha-card>`;
     this._img = root.querySelector("img");
     this._svg = root.querySelector("svg");
@@ -566,9 +582,9 @@ class TuyaLaserMapCard extends HTMLElement {
 
   _chips(parent, label, ic, options, current, onPick) {
     const wrap = Object.assign(document.createElement("div"), { className: "opt" });
-    if (label) {  // the mode row goes without one: its options already say what they are
+    {
       const lbl = Object.assign(document.createElement("span"), { className: "lbl" });
-      lbl.append(icon(ic, 16), label);
+      lbl.append(icon(ic, 18), Object.assign(document.createElement("span"), { textContent: label }));
       wrap.appendChild(lbl);
     }
     const seg = Object.assign(document.createElement("div"), { className: "seg" });
@@ -590,7 +606,7 @@ class TuyaLaserMapCard extends HTMLElement {
     const mode = this._state("select", "cleaning_mode"), water = this._state("select", "mopping"), vac = this._vac;
     const pick = (ent, option) => this._call("select", "select_option", { entity_id: ent.entity_id, option });
     if (mode) {
-      this._chips(el, "", null, CLEAN_MODES.filter(([v]) => mode.attributes.options.includes(v)),
+      this._chips(el, "Modo", "mdi:tune-variant", CLEAN_MODES.filter(([v]) => mode.attributes.options.includes(v)),
         mode.state, (v) => pick(mode, v));
     }
     const m = mode ? mode.state : "sweep";
@@ -643,23 +659,21 @@ class TuyaLaserMapCard extends HTMLElement {
   _cleanBar() {
     const vac = this._cfg.vacuum, state = this._vac && this._vac.state;
     const busy = state === "cleaning" || state === "returning";
-    const tools = this._row("tools");
-    this._btn("Zona", "", () => {
+    const act = this._row("actions");
+    this._round("mdi:vector-square-plus", "Zona", () => {
       const [cx, cy] = this._center(), h = this._unitsPerMeter * 0.75;
       this._rooms.clear();
       this._zones.push({ points: rectPts([cx - h, cy - h], [cx + h, cy + h]) });
       this._sel = { kind: "clean", i: this._zones.length - 1 };
       this._render();
-    }, false, "mdi:vector-square-plus", tools);
+    }, act);
     if (this._sel && this._sel.kind === "clean") {
-      this._btn("Quitar zona", "danger", () => { this._zones.splice(this._sel.i, 1); this._sel = null; this._render(); },
-        false, "mdi:delete-outline", tools);
+      this._round("mdi:delete-outline", "Quitar", () => { this._zones.splice(this._sel.i, 1); this._sel = null; this._render(); },
+        act, "warn");
     }
     if (this._rooms.size || this._zones.length) {
-      this._btn("Deseleccionar", "", () => { this._rooms.clear(); this._zones = []; this._sel = null; this._render(); },
-        false, "mdi:close", tools);
+      this._round("mdi:close", "Ninguna", () => { this._rooms.clear(); this._zones = []; this._sel = null; this._render(); }, act);
     }
-    const act = this._row("actions");
     if (vac && busy) this._round("mdi:pause", "Pausar", () => this._call("vacuum", "pause", { entity_id: vac }), act);
     if (vac && (busy || state === "paused")) this._round("mdi:stop", "Parar", () => this._call("vacuum", "stop", { entity_id: vac }), act, "warn");
     if (vac) {
