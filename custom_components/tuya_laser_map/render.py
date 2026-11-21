@@ -64,6 +64,41 @@ def room_layers(vmap: VacuumMap) -> tuple[np.ndarray, dict[int, np.ndarray]]:
     return vmap.__dict__["_layers"]
 
 
+_PLAN_CACHE: dict = {}
+
+
+def _plan_layers(vmap: VacuumMap, plan: list[dict], t: dict, px, size) -> tuple[np.ndarray, Image.Image]:
+    """House interior mask + drawn walls/windows/doors/furniture. Static while the map frame doesn't
+    change, so cached (it was most of the render time on a small server)."""
+    key = (id(plan), vmap.width, vmap.height, vmap.origin, vmap.resolution_cm, id(t))
+    if key in _PLAN_CACHE:
+        return _PLAN_CACHE[key]
+    block = Image.new("L", size, 0)
+    bd = ImageDraw.Draw(block)
+    for e in plan:  # interior = what the outside can't reach once walls/windows/doors close the house
+        if e["layer"] in ("WALLS", "WINDOWS", "DOORS"):
+            q = [px(*p) for p in e["points"]]
+            bd.polygon(q, fill=255) if e["closed"] else bd.line(q, fill=255, width=SCALE * 3)
+    ImageDraw.floodfill(block, (0, 0), 128)
+    lines = Image.new("RGBA", size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(lines)
+    for e in plan:
+        if e["layer"] == "FURNITURE":
+            q = [px(*p) for p in e["points"]]
+            d.line(q + ([q[0]] if e["closed"] else []), fill=t["furniture"], width=1)
+    for e in plan:
+        q = [px(*p) for p in e["points"]]
+        if e["layer"] == "WALLS" and e["closed"]:
+            d.polygon(q, fill=t["plan_wall"])
+        elif e["layer"] == "WINDOWS":
+            d.line(q + ([q[0]] if e["closed"] else []), fill=t["window"], width=2)
+        elif e["layer"] == "DOORS":
+            d.line(q, fill=t["door"], width=2)
+    _PLAN_CACHE.clear()  # ponytail: one robot, one entry
+    _PLAN_CACHE[key] = (np.asarray(block) != 128, lines)
+    return _PLAN_CACHE[key]
+
+
 def render_png(vmap: VacuumMap, path: list | None = None, selected: set[int] | None = None,
                theme: str = "light", walls: list[tuple[int, int, int, int]] | None = None,
                zones: list[list[tuple[int, int]]] | None = None,
@@ -83,16 +118,9 @@ def render_png(vmap: VacuumMap, path: list | None = None, selected: set[int] | N
         cx, cy = vmap.to_cell(rx, ry)
         return cx * s, cy * s
 
-    inside = None
-    if plan:  # the real house: interior = what the outside can't reach once walls/windows/doors close it
-        block = Image.new("L", size, 0)
-        bd = ImageDraw.Draw(block)
-        for e in plan:
-            if e["layer"] in ("WALLS", "WINDOWS", "DOORS"):
-                q = [px(*p) for p in e["points"]]
-                bd.polygon(q, fill=255) if e["closed"] else bd.line(q, fill=255, width=s * 3)
-        ImageDraw.floodfill(block, (0, 0), 128)
-        inside = np.asarray(block) != 128
+    inside = plan_lines = None
+    if plan:
+        inside, plan_lines = _plan_layers(vmap, plan, t, px, size)
     else:
         _, prints = room_layers(vmap)
         if prints:  # no plan: each room's footprint (furniture holes filled) as background
@@ -111,20 +139,8 @@ def render_png(vmap: VacuumMap, path: list | None = None, selected: set[int] | N
         out[keep] = big[keep]
         big = out
     canvas = Image.fromarray(big).convert("RGBA")
-    if plan:
-        d = ImageDraw.Draw(canvas)
-        for e in plan:
-            if e["layer"] == "FURNITURE":
-                q = [px(*p) for p in e["points"]]
-                d.line(q + ([q[0]] if e["closed"] else []), fill=t["furniture"], width=1)
-        for e in plan:
-            q = [px(*p) for p in e["points"]]
-            if e["layer"] == "WALLS" and e["closed"]:
-                d.polygon(q, fill=t["plan_wall"])
-            elif e["layer"] == "WINDOWS":
-                d.line(q + ([q[0]] if e["closed"] else []), fill=t["window"], width=2)
-            elif e["layer"] == "DOORS":
-                d.line(q, fill=t["door"], width=2)
+    if plan_lines is not None:
+        canvas.alpha_composite(plan_lines)
 
     def overlay(draw) -> None:
         layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))

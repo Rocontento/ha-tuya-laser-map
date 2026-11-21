@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import base64
 import logging
 from collections.abc import Callable
@@ -44,6 +45,9 @@ class LaserMapCoordinator:
         self._listeners: list[Callable[[], None]] = []
         self._task: asyncio.Task | None = None
         self._render_pending = False
+        self._rendering = self._render_again = False
+        self._outline_key: tuple | None = None
+        self._outline_at = 0.0
         self._last_blob: dict[str, bytes] = {}
 
     # --- lifecycle -------------------------------------------------------------------
@@ -125,15 +129,33 @@ class LaserMapCoordinator:
         self.hass.async_create_task(self._render())
 
     async def _render(self) -> None:
-        await asyncio.sleep(0.5)  # coalesce map + path arriving together
+        """One render at a time; data arriving meanwhile is drawn right after (no pile-up)."""
+        await asyncio.sleep(0.3)  # coalesce map + path arriving together
         self._render_pending = False
-        vmap, path, sel, theme = self.vmap, [list(p) for p in self.path], set(self.selected), self.theme
-        targets, plan = list(self.targets), self.plan  # walls/no-go zones are drawn (and edited) by the card
-        png, cal, rooms = await self.hass.async_add_executor_job(
-            lambda: (render_png(vmap, path, sel, theme, targets=targets, plan=plan), calibration_points(vmap),
-                     room_outlines(vmap, plan)))
-        self.png, self.calibration, self.rooms = png, cal, rooms
-        self._notify()
+        if self._rendering:
+            self._render_again = True
+            return
+        self._rendering = True
+        try:
+            while True:
+                self._render_again = False
+                vmap, path, sel, theme = self.vmap, [list(p) for p in self.path], set(self.selected), self.theme
+                targets, plan = list(self.targets), self.plan  # walls/no-go zones: drawn by the card
+                now = time.monotonic()
+                key = (vmap.map_id, id(plan))
+                outlines = key != self._outline_key or now - self._outline_at > 60
+                png, cal, rooms = await self.hass.async_add_executor_job(
+                    lambda: (render_png(vmap, path, sel, theme, targets=targets, plan=plan),
+                             calibration_points(vmap), room_outlines(vmap, plan) if outlines else None))
+                if outlines:
+                    self.rooms, self._outline_key, self._outline_at = rooms, key, now
+                self.png, self.calibration = png, cal
+                _LOGGER.debug("rendered in %.2fs%s", time.monotonic() - now, " (+outlines)" if outlines else "")
+                self._notify()
+                if not self._render_again:
+                    break
+        finally:
+            self._rendering = False
 
     # --- listeners ---------------------------------------------------------------------
     def add_listener(self, cb: Callable[[], None]) -> Callable[[], None]:
