@@ -52,3 +52,68 @@ goto:
           min: -32768
           max: 32767
           mode: box
+add_virtual_wall:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    points:
+      required: true
+      example: "[[-1200, 300], [-400, 300]]"
+      selector:
+        object:
+add_no_go_zone:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    zones:
+      required: true
+      example: "[[-1200, 300, -400, -500]]"
+      selector:
+        object:
+    mode:
+      default: no_sweep
+      selector:
+        select:
+          translation_key: nogo_mode
+          options:
+            - no_sweep
+            - no_mop
+remove_limit:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    x:
+      required: true
+      selector:
+        number:
+          min: -32768
+          max: 32767
+          mode: box
+    y:
+      required: true
+      selector:
+        number:
+          min: -32768
+          max: 32767
+          mode: box
+clear_limits:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    what:
+      required: true
+      selector:
+        select:
+          translation_key: clear_what
+          options:
+            - walls
+            - no_go_zones
+            - all

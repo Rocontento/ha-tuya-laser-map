@@ -52,6 +52,27 @@ def goto_point(x: int, y: int) -> bytes:
     return frame(0x16, struct.pack(">hh", x, y))
 
 
+def set_walls(walls: list[tuple[int, int, int, int]]) -> bytes:
+    """0x12: replace all virtual walls (each a segment x1, y1, x2, y2). The robot answers 0x13."""
+    return frame(0x12, bytes([len(walls)]) + b"".join(struct.pack(">4h", *w) for w in walls))
+
+
+def set_nogo(zones: list[dict], protocol: int = 1) -> bytes:
+    """0x38: replace all restricted zones ({"mode": 1 no sweep / 2 no mop, "points": [(x, y)...]}).
+    The robot answers 0x39. Names are not kept (the app shows none for this robot)."""
+    data = bytearray([protocol, len(zones)])
+    for z in zones:
+        pts = z["points"]
+        data.append(z["mode"])
+        if protocol == 2:
+            data.append(0 if len(pts) == 4 else 1)
+        data.append(len(pts))
+        for x, y in pts:
+            data += struct.pack(">hh", x, y)
+        data += bytes(20)  # name length 0 + 19-byte name
+    return frame(0x38, bytes(data))
+
+
 def request(cmd: int) -> bytes:
     """Ask the robot to report state for an odd (report) command, e.g. 0x13 walls, 0x39 no-go zones."""
     return frame(cmd)

@@ -72,8 +72,10 @@ def decode_frames(key: bytes, buffer: bytes) -> tuple[list[tuple[int, Any]], byt
     return out, buffer[pos:]
 
 
-async def send_dps(host: str, device_id: str, local_key: str, dps: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
-    """Write DPs over a short-lived LAN connection; return any DPs the device reports back."""
+async def send_dps(host: str, device_id: str, local_key: str, dps: dict[str, Any], timeout: float = 5.0,
+                   want: str | None = None) -> dict[str, Any]:
+    """Write DPs over a short-lived LAN connection; return the DPs the device reports back
+    (until ``want`` is among them, when given)."""
     key = local_key.encode()
     reader, writer = await asyncio.wait_for(asyncio.open_connection(host, PORT), timeout)
     try:
@@ -94,7 +96,7 @@ async def send_dps(host: str, device_id: str, local_key: str, dps: dict[str, Any
             for _, data in frames:
                 if isinstance(data, dict) and isinstance(data.get("dps"), dict):
                     reported.update(data["dps"])
-            if reported:
+            if reported and (want is None or want in reported):
                 break
         return reported
     finally:

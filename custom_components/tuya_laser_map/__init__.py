@@ -19,6 +19,13 @@ CLEAN_ROOMS_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("rooms"): vol.A
                                  vol.Optional("times", default=1): vol.All(int, vol.Range(1, 3))})
 CLEAN_ZONE_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("zones"): vol.All(cv.ensure_list, [vol.All(cv.ensure_list, [vol.Coerce(float)])]),
                                 vol.Optional("times", default=1): vol.All(int, vol.Range(1, 3))})
+_POINTS = vol.All(cv.ensure_list, [vol.All(cv.ensure_list, [vol.Coerce(float)], vol.Length(min=2))])
+NOGO_MODES = {"no_sweep": 1, "no_mop": 2}
+ADD_WALL_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("points"): vol.All(_POINTS, vol.Length(min=2))})
+ADD_NOGO_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("zones"): _POINTS,
+                              vol.Optional("mode", default="no_sweep"): vol.In(NOGO_MODES)})
+REMOVE_LIMIT_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("x"): vol.Coerce(float), vol.Required("y"): vol.Coerce(float)})
+CLEAR_LIMITS_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("what"): vol.In(["walls", "no_go_zones", "all"])})
 GOTO_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("x"): vol.Coerce(float), vol.Required("y"): vol.Coerce(float)})
 
 
@@ -59,6 +66,21 @@ def _register_services(hass: HomeAssistant) -> None:
         except OSError as err:
             raise HomeAssistantError(f"Robot not reachable: {err}") from err
 
+    async def add_virtual_wall(call: ServiceCall) -> None:
+        await _coordinator(hass, call).add_walls(call.data["points"])
+
+    async def add_no_go_zone(call: ServiceCall) -> None:
+        await _coordinator(hass, call).add_nogo(call.data["zones"], NOGO_MODES[call.data["mode"]])
+
+    async def remove_limit(call: ServiceCall) -> None:
+        if not await _coordinator(hass, call).remove_limit_at(call.data["x"], call.data["y"]):
+            raise ServiceValidationError("No wall or no-go zone at that point")
+
+    async def clear_limits(call: ServiceCall) -> None:
+        what = call.data["what"]
+        await _coordinator(hass, call).set_limits(walls=[] if what in ("walls", "all") else None,
+                                                  nogo=[] if what in ("no_go_zones", "all") else None)
+
     async def clean_zone(call: ServiceCall) -> None:
         await _coordinator(hass, call).clean_zones(call.data["zones"], call.data["times"])
 
@@ -68,3 +90,7 @@ def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "clean_rooms", clean_rooms, CLEAN_ROOMS_SCHEMA)
     hass.services.async_register(DOMAIN, "clean_zone", clean_zone, CLEAN_ZONE_SCHEMA)
     hass.services.async_register(DOMAIN, "goto", goto, GOTO_SCHEMA)
+    hass.services.async_register(DOMAIN, "add_virtual_wall", add_virtual_wall, ADD_WALL_SCHEMA)
+    hass.services.async_register(DOMAIN, "add_no_go_zone", add_no_go_zone, ADD_NOGO_SCHEMA)
+    hass.services.async_register(DOMAIN, "remove_limit", remove_limit, REMOVE_LIMIT_SCHEMA)
+    hass.services.async_register(DOMAIN, "clear_limits", clear_limits, CLEAR_LIMITS_SCHEMA)

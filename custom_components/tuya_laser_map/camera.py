@@ -53,4 +53,7 @@ class MapCamera(Camera):
             "selected_rooms": sorted(c.selected),
             "p2p_connected": c.connected,
             "map_id": c.vmap.map_id if c.vmap else None,
+            "walls": [list(w) for w in c.walls],
+            "no_go_zones": [{"mode": {1: "no_sweep", 2: "no_mop"}.get(z["mode"], z["mode"]),
+                             "points": [list(p) for p in z["points"]]} for z in c.nogo],
         }

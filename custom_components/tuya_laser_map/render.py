@@ -15,9 +15,9 @@ _SS = 2  # supersampling factor for smooth edges
 
 THEMES = {
     "light": dict(bg=(255, 255, 255, 255), footprint=(236, 236, 233), floor=(178, 178, 175),
-                  selected=(124, 154, 58), accent=(130, 160, 60), text=(40, 40, 40)),
+                  selected=(124, 154, 58), accent=(130, 160, 60), text=(40, 40, 40), limit=(255, 59, 48)),
     "dark": dict(bg=(18, 18, 20, 255), footprint=(44, 44, 48), floor=(92, 92, 98),
-                 selected=(124, 154, 58), accent=(150, 185, 70), text=(225, 225, 230)),
+                 selected=(124, 154, 58), accent=(150, 185, 70), text=(225, 225, 230), limit=(255, 69, 58)),
 }
 
 
@@ -50,21 +50,31 @@ def footprint(m: np.ndarray) -> np.ndarray:
     return _fill_holes(_open(_close(_fill_holes(m), 9), 5))
 
 
-def _smooth_layer(mask: np.ndarray, size: tuple[int, int], blur: float, shrink: int = 1) -> Image.Image:
-    im = _img(mask).resize(size, Image.NEAREST).filter(ImageFilter.GaussianBlur(blur))
+def _smooth_layer(mask: np.ndarray, s: int, blur: float, shrink: int = 1) -> Image.Image:
+    im = _img(mask).resize((mask.shape[1] * s, mask.shape[0] * s), Image.NEAREST).filter(ImageFilter.GaussianBlur(blur))
     im = im.point(lambda v: 255 if v > 128 else 0)
     return im.filter(ImageFilter.MinFilter(shrink)) if shrink > 1 else im
 
 
+def _bbox(m: np.ndarray, pad: int) -> tuple[int, int, int, int]:
+    ys, xs = np.nonzero(m)
+    return (max(xs.min() - pad, 0), max(ys.min() - pad, 0),
+            min(xs.max() + 1 + pad, m.shape[1]), min(ys.max() + 1 + pad, m.shape[0]))
+
+
 def room_layers(vmap: VacuumMap) -> tuple[np.ndarray, dict[int, np.ndarray]]:
+    if (cached := vmap.__dict__.get("_layers")) is not None:
+        return cached
     cells = np.frombuffer(vmap.cells, np.uint8).reshape(vmap.height, vmap.width)
     floor = ((cells & 7) == 7) & (cells != FLOOR_NO_ROOM)
     rid = np.where(floor, cells >> 3, 0)
-    return rid, {int(r): footprint(rid == r) for r in np.unique(rid) if r}
+    vmap.__dict__["_layers"] = (rid, {int(r): footprint(rid == r) for r in np.unique(rid) if r})
+    return vmap.__dict__["_layers"]
 
 
 def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selected: set[int] | None = None,
-               theme: str = "light", room_names: dict[int, str] | None = None) -> bytes:
+               theme: str = "light", room_names: dict[int, str] | None = None,
+               walls: list[tuple[int, int, int, int]] | None = None, zones: list[list[tuple[int, int]]] | None = None) -> bytes:
     t = THEMES.get(theme, THEMES["light"])
     selected = selected or set()
     s = SCALE * _SS
@@ -72,16 +82,23 @@ def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selec
     rid, prints = room_layers(vmap)
     canvas = Image.new("RGBA", size, t["bg"])
 
-    def paint(mask_im: Image.Image, color) -> None:
-        layer = Image.new("RGBA", size, color + (255,))
+    def paint(mask: np.ndarray, box, color, blur: float, shrink: int) -> None:
+        # each room is processed only inside its bounding box (full-canvas filters are ~10x slower)
+        x0, y0, x1, y1 = box
+        mask_im = _smooth_layer(mask[y0:y1, x0:x1], s, blur, shrink)
+        layer = Image.new("RGBA", mask_im.size, color + (255,))
         layer.putalpha(mask_im)
-        canvas.alpha_composite(layer)
+        canvas.alpha_composite(layer, dest=(x0 * s, y0 * s))
 
+    prints = {r: fp for r, fp in prints.items() if fp.any()}
+    boxes = {r: _bbox(fp, 3) for r, fp in prints.items()}
     for r, fp in prints.items():
-        paint(_smooth_layer(fp, size, s * 1.2, 2 * s + 1), t["footprint"])
+        paint(fp, boxes[r], t["footprint"], s * 1.2, 2 * s + 1)
     for r, fp in prints.items():
-        m = _close(_open(rid == r, 3), 5) & fp
-        paint(_smooth_layer(m, size, s * 1.3, 3), t["selected"] if r in selected else t["floor"])
+        x0, y0, x1, y1 = boxes[r]
+        m = np.zeros_like(fp)
+        m[y0:y1, x0:x1] = _close(_open((rid == r)[y0:y1, x0:x1], 3), 5) & fp[y0:y1, x0:x1]
+        paint(m, boxes[r], t["selected"] if r in selected else t["floor"], s * 1.3, 3)
     d = ImageDraw.Draw(canvas)
     if path:
         pts = [((vmap.origin[0] + x / 10) * s, (vmap.origin[1] - y / 10) * s) for x, y in path]
@@ -91,6 +108,18 @@ def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selec
                 d.line([a, b], fill=t["bg"][:3] + (255,), width=s + 3)
                 d.line([a, b], fill=t["accent"] + (255,), width=max(2, s - 1))
             acc += ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+    def px(rx: float, ry: float) -> tuple[float, float]:
+        cx, cy = vmap.to_cell(rx, ry)
+        return cx * s, cy * s
+
+    if zones:
+        overlay = Image.new("RGBA", size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(overlay)
+        for pts in zones:
+            od.polygon([px(*p) for p in pts], fill=t["limit"] + (46,), outline=t["limit"] + (255,), width=max(2, s // 2))
+        canvas.alpha_composite(overlay)
+    for x1, y1, x2, y2 in walls or []:
+        d.line([px(x1, y1), px(x2, y2)], fill=t["limit"] + (255,), width=max(3, s))
     font = ImageFont.load_default(size=int(s * 2.4))
     names = room_names or {}
     for r, fp in prints.items():

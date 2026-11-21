@@ -33,10 +33,14 @@ class LaserMapCoordinator:
         self.calibration: list[dict] = []
         self.rooms: dict[int, dict] = {}
         self.selected: set[int] = set()
+        self.walls: list[tuple[int, int, int, int]] = []
+        self.nogo: list[dict] = []
+        self._nogo_protocol = 1
         self.connected = False
         self._listeners: list[Callable[[], None]] = []
         self._task: asyncio.Task | None = None
         self._render_pending = False
+        self._last_blob: dict[str, bytes] = {}
 
     # --- lifecycle -------------------------------------------------------------------
     def start(self) -> None:
@@ -52,6 +56,10 @@ class LaserMapCoordinator:
 
     async def _loop(self) -> None:
         c = self.config
+        try:
+            await self.refresh_limits()
+        except Exception as err:  # noqa: BLE001 - limits are optional; the map still works
+            _LOGGER.debug("Could not read walls/no-go zones: %s", err)
         ices = [{"urls": u} for u in c[CONF_STUN]]
         while True:
             try:
@@ -69,6 +77,10 @@ class LaserMapCoordinator:
     # --- data ------------------------------------------------------------------------
     @callback
     def _on_file(self, name: str, blob: bytes) -> None:
+        kind = name.split(".")[0]
+        if self._last_blob.get(kind) == blob:  # the robot re-sends an unchanged map periodically
+            return
+        self._last_blob[kind] = blob
         try:
             if name.startswith("map.bin"):
                 self.vmap = parse_map(blob)
@@ -92,8 +104,10 @@ class LaserMapCoordinator:
         await asyncio.sleep(0.5)  # coalesce map + path arriving together
         self._render_pending = False
         vmap, path, sel, theme = self.vmap, list(self.path), set(self.selected), self.theme
+        walls, zones = list(self.walls), [z["points"] for z in self.nogo]
         png, cal, rooms = await self.hass.async_add_executor_job(
-            lambda: (render_png(vmap, path, sel, theme), calibration_points(vmap), room_outlines(vmap)))
+            lambda: (render_png(vmap, path, sel, theme, walls=walls, zones=zones), calibration_points(vmap),
+                     room_outlines(vmap)))
         self.png, self.calibration, self.rooms = png, cal, rooms
         self._notify()
 
@@ -126,9 +140,46 @@ class LaserMapCoordinator:
 
     async def send(self, frame: bytes) -> tuple[int, bytes] | None:
         c = self.config
-        reply = await send_dps(c[CONF_HOST], c[CONF_DEVICE_ID], c[CONF_LOCAL_KEY], {commands.DP_COMMAND: b64(frame)})
+        reply = await send_dps(c[CONF_HOST], c[CONF_DEVICE_ID], c[CONF_LOCAL_KEY], {commands.DP_COMMAND: b64(frame)},
+                               want=commands.DP_COMMAND)
         raw = reply.get(commands.DP_COMMAND)
-        return commands.parse(base64.b64decode(raw)) if raw else None
+        parsed = commands.parse(base64.b64decode(raw)) if raw else None
+        if parsed and self._apply_limits_report(*parsed):
+            self.request_render()
+        return parsed
+
+    def _apply_limits_report(self, cmd: int, data: bytes) -> bool:
+        if cmd == 0x13:
+            self.walls = [tuple(w) for w in commands.decode_walls(data)]
+        elif cmd == 0x39 and data:
+            self._nogo_protocol = data[0]
+            self.nogo = commands.decode_nogo_v2(data)
+        else:
+            return False
+        self._notify()
+        return True
+
+    # --- walls and no-go zones (each write replaces the robot's whole list) ----------------
+    async def refresh_limits(self) -> None:
+        await self.send(commands.request(0x13))
+        await self.send(commands.request(0x39))
+
+    async def set_limits(self, walls: list | None = None, nogo: list | None = None) -> None:
+        if walls is not None:
+            await self.send(commands.set_walls([tuple(round(v) for v in w[:4]) for w in walls]))
+        if nogo is not None:
+            await self.send(commands.set_nogo(nogo, self._nogo_protocol))
+        await self.refresh_limits()  # read back what the robot actually stored
+
+    async def add_walls(self, points: list[list[float]]) -> None:
+        """A drawn path [[x, y], ...] becomes one wall per segment."""
+        segs = [(*points[i][:2], *points[i + 1][:2]) for i in range(len(points) - 1)]
+        await self.set_limits(walls=self.walls + segs)
+
+    async def add_nogo(self, rects: list[list[float]], mode: int = 1) -> None:
+        new = [{"mode": mode, "points": [(round(x1), round(y1)), (round(x2), round(y1)), (round(x2), round(y2)),
+                                         (round(x1), round(y2))]} for x1, y1, x2, y2 in (r[:4] for r in rects)]
+        await self.set_limits(nogo=self.nogo + new)
 
     async def clean_rooms(self, rooms: list, times: int = 1) -> None:
         ids = self.resolve_rooms(rooms)
@@ -145,3 +196,19 @@ class LaserMapCoordinator:
 
     async def goto(self, x: float, y: float) -> None:
         await self.send(commands.goto_point(round(x), round(y)))
+
+    async def remove_limit_at(self, x: float, y: float, radius: float = 60) -> bool:
+        """Remove the no-go zone containing (x, y), or else the wall passing within ``radius``
+        (robot units: 1/10 cell, i.e. 60 = 30 cm at 5 cm cells)."""
+        for i, z in enumerate(self.nogo):
+            xs, ys = [p[0] for p in z["points"]], [p[1] for p in z["points"]]
+            if min(xs) <= x <= max(xs) and min(ys) <= y <= max(ys):
+                await self.set_limits(nogo=self.nogo[:i] + self.nogo[i + 1:])
+                return True
+        for i, (x1, y1, x2, y2) in enumerate(self.walls):
+            dx, dy = x2 - x1, y2 - y1
+            t = max(0.0, min(1.0, ((x - x1) * dx + (y - y1) * dy) / ((dx * dx + dy * dy) or 1)))
+            if ((x - x1 - t * dx) ** 2 + (y - y1 - t * dy) ** 2) ** 0.5 <= radius:
+                await self.set_limits(walls=self.walls[:i] + self.walls[i + 1:])
+                return True
+        return False

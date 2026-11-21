@@ -118,6 +118,85 @@
           "description": "Robot Y coordinate."
         }
       }
+    },
+    "add_virtual_wall": {
+      "name": "Añadir muro virtual",
+      "description": "Añade un muro a lo largo de un trazo (cada tramo es un muro). Los muros existentes se conservan.",
+      "fields": {
+        "points": {
+          "name": "Puntos",
+          "description": "Trazo [[x, y], ...] en coordenadas del robot."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Necesario si hay varios robots."
+        }
+      }
+    },
+    "add_no_go_zone": {
+      "name": "Añadir zona prohibida",
+      "description": "Añade rectángulos prohibidos [x1, y1, x2, y2]. Las zonas existentes se conservan.",
+      "fields": {
+        "zones": {
+          "name": "Zonas",
+          "description": "Lista de [x1, y1, x2, y2]."
+        },
+        "mode": {
+          "name": "Restricción",
+          "description": "No aspirar o no fregar."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Necesario si hay varios robots."
+        }
+      }
+    },
+    "remove_limit": {
+      "name": "Quitar muro o zona prohibida",
+      "description": "Quita la zona prohibida que contiene el punto, o el muro que pasa junto a él.",
+      "fields": {
+        "x": {
+          "name": "X",
+          "description": "Coordenada X del robot."
+        },
+        "y": {
+          "name": "Y",
+          "description": "Coordenada Y del robot."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Necesario si hay varios robots."
+        }
+      }
+    },
+    "clear_limits": {
+      "name": "Borrar muros / zonas prohibidas",
+      "description": "Borra todos los muros virtuales, todas las zonas prohibidas o ambos.",
+      "fields": {
+        "what": {
+          "name": "Qué",
+          "description": "Qué borrar."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Necesario si hay varios robots."
+        }
+      }
+    }
+  },
+  "selector": {
+    "nogo_mode": {
+      "options": {
+        "no_sweep": "No aspirar",
+        "no_mop": "No fregar"
+      }
+    },
+    "clear_what": {
+      "options": {
+        "walls": "Muros virtuales",
+        "no_go_zones": "Zonas prohibidas",
+        "all": "Ambos"
+      }
     }
   }
 }

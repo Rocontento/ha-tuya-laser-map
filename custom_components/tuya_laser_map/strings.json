@@ -118,6 +118,85 @@
           "description": "Robot Y coordinate."
         }
       }
+    },
+    "add_virtual_wall": {
+      "name": "Add virtual wall",
+      "description": "Add a wall along a drawn path (each segment becomes a wall). Existing walls are kept.",
+      "fields": {
+        "points": {
+          "name": "Points",
+          "description": "Path [[x, y], ...] in robot coordinates."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        }
+      }
+    },
+    "add_no_go_zone": {
+      "name": "Add no-go zone",
+      "description": "Add restricted rectangles [x1, y1, x2, y2]. Existing zones are kept.",
+      "fields": {
+        "zones": {
+          "name": "Zones",
+          "description": "List of [x1, y1, x2, y2]."
+        },
+        "mode": {
+          "name": "Restriction",
+          "description": "No sweeping or no mopping."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        }
+      }
+    },
+    "remove_limit": {
+      "name": "Remove wall or no-go zone",
+      "description": "Remove the no-go zone containing the point, or the wall passing next to it.",
+      "fields": {
+        "x": {
+          "name": "X",
+          "description": "Robot X coordinate."
+        },
+        "y": {
+          "name": "Y",
+          "description": "Robot Y coordinate."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        }
+      }
+    },
+    "clear_limits": {
+      "name": "Clear walls / no-go zones",
+      "description": "Delete all virtual walls, all no-go zones, or both.",
+      "fields": {
+        "what": {
+          "name": "What",
+          "description": "What to delete."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        }
+      }
+    }
+  },
+  "selector": {
+    "nogo_mode": {
+      "options": {
+        "no_sweep": "No sweeping",
+        "no_mop": "No mopping"
+      }
+    },
+    "clear_what": {
+      "options": {
+        "walls": "Virtual walls",
+        "no_go_zones": "No-go zones",
+        "all": "Both"
+      }
     }
   }
 }
