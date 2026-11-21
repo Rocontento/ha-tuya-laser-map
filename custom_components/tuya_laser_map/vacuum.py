@@ -22,7 +22,8 @@ from .const import CONF_DEVICE_ID, CONF_SOURCE_VACUUM, DOMAIN
 from .coordinator import LaserMapCoordinator
 
 FEATURES = (VacuumEntityFeature.START | VacuumEntityFeature.PAUSE | VacuumEntityFeature.STOP
-            | VacuumEntityFeature.RETURN_HOME | VacuumEntityFeature.STATE | VacuumEntityFeature.CLEAN_AREA)
+            | VacuumEntityFeature.RETURN_HOME | VacuumEntityFeature.STATE | VacuumEntityFeature.CLEAN_AREA
+            | VacuumEntityFeature.FAN_SPEED | VacuumEntityFeature.LOCATE)
 
 
 def source_vacuum(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
@@ -79,8 +80,26 @@ class RoomVacuum(StateVacuumEntity):
         except ValueError:
             return None
 
-    async def _forward(self, service: str) -> None:
-        await self.hass.services.async_call("vacuum", service, {ATTR_ENTITY_ID: self._source}, blocking=True)
+    def _src_attr(self, name: str) -> Any:
+        st = self._source and self.hass.states.get(self._source)
+        return st.attributes.get(name) if st else None
+
+    @property
+    def fan_speed(self) -> str | None:
+        return self._src_attr("fan_speed")
+
+    @property
+    def fan_speed_list(self) -> list[str]:
+        return self._src_attr("fan_speed_list") or []
+
+    async def _forward(self, service: str, **data: Any) -> None:
+        await self.hass.services.async_call("vacuum", service, {ATTR_ENTITY_ID: self._source, **data}, blocking=True)
+
+    async def async_set_fan_speed(self, fan_speed: str, **kwargs: Any) -> None:
+        await self._forward("set_fan_speed", fan_speed=fan_speed)
+
+    async def async_locate(self, **kwargs: Any) -> None:
+        await self._forward("locate")
 
     async def async_start(self) -> None:
         await self._forward("start")
