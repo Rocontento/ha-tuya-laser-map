@@ -17,7 +17,7 @@ from .const import (
 )
 from .protocol import commands
 from .protocol.lan import b64, send_dps
-from .protocol.mapdata import VacuumMap, parse_map, parse_path
+from .protocol.mapdata import FLOOR_NO_ROOM, VacuumMap, parse_map, parse_path
 from .protocol.p2p import run_session
 from .render import calibration_points, render_png, room_outlines
 
@@ -102,6 +102,22 @@ class LaserMapCoordinator:
             _LOGGER.warning("Could not decode %s: %s", name, err)
             return
         self.request_render()
+
+    @property
+    def current_room(self) -> int | None:
+        """Room under the robot (last path point), the nearest room cell within 30 cm if it is on a border."""
+        vm = self.vmap
+        if vm is None or not self.path or not self.path[-1]:
+            return None
+        cx, cy = (int(v) for v in vm.to_cell(*self.path[-1][-1]))
+        for r in range(0, 7):
+            for y in range(cy - r, cy + r + 1):
+                for x in range(cx - r, cx + r + 1):
+                    if 0 <= x < vm.width and 0 <= y < vm.height:
+                        c = vm.cell(x, y)
+                        if c & 7 == 7 and c != FLOOR_NO_ROOM and (c >> 3) in vm.rooms:
+                            return c >> 3
+        return None
 
     def _add_path(self, pts: list[tuple[int, int]]) -> None:
         """The robot restarts its path file on pause/resume: keep earlier segments of the same job.

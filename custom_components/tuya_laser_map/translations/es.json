@@ -78,6 +78,16 @@
       "rooms": {
         "name": "Habitaciones"
       }
+    },
+    "sensor": {
+      "current_room": {
+        "name": "Habitación actual"
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "Cargando"
+      }
     }
   },
   "services": {

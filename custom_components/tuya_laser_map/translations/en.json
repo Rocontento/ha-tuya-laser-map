@@ -78,6 +78,16 @@
       "rooms": {
         "name": "Rooms"
       }
+    },
+    "sensor": {
+      "current_room": {
+        "name": "Current room"
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "Charging"
+      }
     }
   },
   "services": {
