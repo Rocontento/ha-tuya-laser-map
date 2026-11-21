@@ -12,9 +12,6 @@
         "title": "Sign in once to fetch the device keys",
         "description": "Your password is only used now to read the robot's keys; it is not stored. After setup everything runs locally.",
         "data": {
-          "name": "Name",
-          "host": "Robot IP address",
-          "device_id": "Tuya device ID",
           "app": "App the robot is paired with",
           "email": "Account email",
           "password": "Account password",
@@ -31,6 +28,15 @@
           "device_password": "P2P device password",
           "user_id": "Tuya user ID (uid)",
           "stun_servers": "STUN servers (comma separated, e.g. stun:1.2.3.4:3478)"
+        }
+      },
+      "device": {
+        "title": "Choose the robot",
+        "description": "The IP is filled in when the robot is found on your network; check it if it is empty.",
+        "data": {
+          "device_id": "Robot",
+          "name": "Name",
+          "host": "Robot IP address"
         }
       }
     },
@@ -63,27 +69,54 @@
       "name": "Clean rooms",
       "description": "Clean the given rooms (names or ids from the map).",
       "fields": {
-        "config_entry_id": {"name": "Robot", "description": "Needed when several robots are configured."},
-        "rooms": {"name": "Rooms", "description": "Room names or ids."},
-        "times": {"name": "Passes", "description": "Cleaning passes per room."}
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        },
+        "rooms": {
+          "name": "Rooms",
+          "description": "Room names or ids."
+        },
+        "times": {
+          "name": "Passes",
+          "description": "Cleaning passes per room."
+        }
       }
     },
     "clean_zone": {
       "name": "Clean zones",
       "description": "Clean rectangles given in robot coordinates [x1, y1, x2, y2] (as xiaomi-vacuum-map-card sends them).",
       "fields": {
-        "config_entry_id": {"name": "Robot", "description": "Needed when several robots are configured."},
-        "zones": {"name": "Zones", "description": "List of [x1, y1, x2, y2]."},
-        "times": {"name": "Passes", "description": "Cleaning passes per zone."}
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        },
+        "zones": {
+          "name": "Zones",
+          "description": "List of [x1, y1, x2, y2]."
+        },
+        "times": {
+          "name": "Passes",
+          "description": "Cleaning passes per zone."
+        }
       }
     },
     "goto": {
       "name": "Go to point",
       "description": "Send the robot to a point in robot coordinates.",
       "fields": {
-        "config_entry_id": {"name": "Robot", "description": "Needed when several robots are configured."},
-        "x": {"name": "X", "description": "Robot X coordinate."},
-        "y": {"name": "Y", "description": "Robot Y coordinate."}
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when several robots are configured."
+        },
+        "x": {
+          "name": "X",
+          "description": "Robot X coordinate."
+        },
+        "y": {
+          "name": "Y",
+          "description": "Robot Y coordinate."
+        }
       }
     }
   }

@@ -12,9 +12,6 @@
         "title": "Inicia sesión una vez para obtener las claves",
         "description": "La contraseña solo se usa ahora para leer las claves del robot; no se guarda. Después todo funciona en local.",
         "data": {
-          "name": "Nombre",
-          "host": "IP del robot",
-          "device_id": "ID de dispositivo Tuya",
           "app": "App con la que está vinculado",
           "email": "Email de la cuenta",
           "password": "Contraseña de la cuenta",
@@ -31,6 +28,15 @@
           "device_password": "Contraseña P2P del dispositivo",
           "user_id": "ID de usuario Tuya (uid)",
           "stun_servers": "Servidores STUN (separados por comas)"
+        }
+      },
+      "device": {
+        "title": "Elige el robot",
+        "description": "La IP se rellena sola si el robot se encuentra en tu red; revísala si está vacía.",
+        "data": {
+          "device_id": "Robot",
+          "name": "Nombre",
+          "host": "IP del robot"
         }
       }
     },
