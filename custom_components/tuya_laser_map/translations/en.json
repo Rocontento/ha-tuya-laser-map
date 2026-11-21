@@ -182,6 +182,24 @@
           "description": "Needed when several robots are configured."
         }
       }
+    },
+    "set_limits": {
+      "name": "Set walls / no-go zones",
+      "description": "Replaces all virtual walls and/or no-go zones (what the map card editor saves).",
+      "fields": {
+        "walls": {
+          "name": "Walls",
+          "description": "List of [x1, y1, x2, y2] in robot coordinates."
+        },
+        "no_go_zones": {
+          "name": "No-go zones",
+          "description": "List of {mode: 0 all / 1 no sweep / 2 no mop, points: [[x, y], ...]}."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Needed when there are several robots."
+        }
+      }
     }
   },
   "selector": {

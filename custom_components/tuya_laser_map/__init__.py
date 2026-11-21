@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import voluptuous as vol
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
+
+import pathlib
 
 from .const import DOMAIN
 from .coordinator import LaserMapCoordinator
@@ -26,7 +31,21 @@ ADD_NOGO_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("zones"): _POINTS,
                               vol.Optional("mode", default="no_sweep"): vol.In(NOGO_MODES)})
 REMOVE_LIMIT_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("x"): vol.Coerce(float), vol.Required("y"): vol.Coerce(float)})
 CLEAR_LIMITS_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("what"): vol.In(["walls", "no_go_zones", "all"])})
+SET_LIMITS_SCHEMA = vol.Schema({_ENTRY: cv.string,
+                                vol.Optional("walls"): [vol.All(cv.ensure_list, [vol.Coerce(float)], vol.Length(min=4, max=4))],
+                                vol.Optional("no_go_zones"): [vol.Schema({vol.Required("mode"): vol.All(int, vol.Range(0, 3)),
+                                                                          vol.Required("points"): vol.All(_POINTS, vol.Length(min=3))})]})
+CARD_URL = "/tuya_laser_map/tuya-laser-map-card.js"
 GOTO_SCHEMA = vol.Schema({_ENTRY: cv.string, vol.Required("x"): vol.Coerce(float), vol.Required("y"): vol.Coerce(float)})
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the bundled map card and load it on every dashboard (no manual resource needed)."""
+    card = pathlib.Path(__file__).parent / "frontend" / "tuya-laser-map-card.js"
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(card), False)])
+    if "frontend" in hass.config.components:  # absent only in bare test setups
+        add_extra_js_url(hass, f"{CARD_URL}?v={card.stat().st_mtime_ns}")
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -81,6 +100,14 @@ def _register_services(hass: HomeAssistant) -> None:
         await _coordinator(hass, call).set_limits(walls=[] if what in ("walls", "all") else None,
                                                   nogo=[] if what in ("no_go_zones", "all") else None)
 
+    async def set_limits(call: ServiceCall) -> None:
+        """Replace walls and/or no-go zones as a whole (what the card's editor saves)."""
+        nogo = call.data.get("no_go_zones")
+        await _coordinator(hass, call).set_limits(
+            walls=call.data.get("walls"),
+            nogo=None if nogo is None else [{"mode": z["mode"], "points": [(round(x), round(y)) for x, y, *_ in z["points"]]}
+                                            for z in nogo])
+
     async def clean_zone(call: ServiceCall) -> None:
         await _coordinator(hass, call).clean_zones(call.data["zones"], call.data["times"])
 
@@ -93,4 +120,5 @@ def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "add_virtual_wall", add_virtual_wall, ADD_WALL_SCHEMA)
     hass.services.async_register(DOMAIN, "add_no_go_zone", add_no_go_zone, ADD_NOGO_SCHEMA)
     hass.services.async_register(DOMAIN, "remove_limit", remove_limit, REMOVE_LIMIT_SCHEMA)
+    hass.services.async_register(DOMAIN, "set_limits", set_limits, SET_LIMITS_SCHEMA)
     hass.services.async_register(DOMAIN, "clear_limits", clear_limits, CLEAR_LIMITS_SCHEMA)

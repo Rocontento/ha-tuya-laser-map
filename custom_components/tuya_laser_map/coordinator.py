@@ -105,9 +105,9 @@ class LaserMapCoordinator:
         await asyncio.sleep(0.5)  # coalesce map + path arriving together
         self._render_pending = False
         vmap, path, sel, theme = self.vmap, list(self.path), set(self.selected), self.theme
-        walls, zones, targets = list(self.walls), [z["points"] for z in self.nogo], list(self.targets)
+        targets = list(self.targets)  # walls/no-go zones are drawn (and edited) by the card
         png, cal, rooms = await self.hass.async_add_executor_job(
-            lambda: (render_png(vmap, path, sel, theme, walls=walls, zones=zones, targets=targets), calibration_points(vmap),
+            lambda: (render_png(vmap, path, sel, theme, targets=targets), calibration_points(vmap),
                      room_outlines(vmap)))
         self.png, self.calibration, self.rooms = png, cal, rooms
         self._notify()

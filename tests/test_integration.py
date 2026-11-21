@@ -71,11 +71,15 @@ async def test_map_camera_and_room_clean(hass):
         await hass.services.async_call(DOMAIN, "add_no_go_zone", {"zones": [[10, 20, 30, -40]], "mode": "no_mop"}, blocking=True)
         assert coord.nogo == [{"mode": 2, "points": [(10, 20), (30, 20), (30, -40), (10, -40)]}]
         state = hass.states.get("camera.conga_map")
-        assert state.attributes["no_go_zones"][0]["mode"] == "no_mop" and len(state.attributes["walls"]) == 3
+        assert state.attributes["no_go_zones"][0]["mode"] == 2 and len(state.attributes["walls"]) == 3
         await hass.services.async_call(DOMAIN, "remove_limit", {"x": 20, "y": 0}, blocking=True)  # inside the zone
         assert coord.nogo == []
         await hass.services.async_call(DOMAIN, "remove_limit", {"x": 25, "y": 10}, blocking=True)  # near wall 2
         assert coord.walls == [(-100, 0, -100, 200), (50, 0, 50, 50)]
         await hass.services.async_call(DOMAIN, "clear_limits", {"what": "all"}, blocking=True)
         assert coord.walls == [] and coord.nogo == []
+        # the card editor saves the full lists at once
+        await hass.services.async_call(DOMAIN, "set_limits", {"walls": [[1, 2, 3, 4]], "no_go_zones": [
+            {"mode": 0, "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}]}, blocking=True)
+        assert coord.walls == [(1, 2, 3, 4)] and coord.nogo == [{"mode": 0, "points": [(0, 0), (10, 0), (10, 10), (0, 10)]}]
         await hass.config_entries.async_unload(entry.entry_id)

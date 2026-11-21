@@ -117,3 +117,17 @@ clear_limits:
             - walls
             - no_go_zones
             - all
+set_limits:
+  fields:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: tuya_laser_map
+    walls:
+      example: "[[-1359, 324, -1360, 239]]"
+      selector:
+        object:
+    no_go_zones:
+      example: '[{"mode": 1, "points": [[-700, 350], [-370, 350], [-370, 190], [-700, 190]]}]'
+      selector:
+        object:

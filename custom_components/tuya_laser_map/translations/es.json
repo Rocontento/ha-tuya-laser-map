@@ -182,6 +182,24 @@
           "description": "Necesario si hay varios robots."
         }
       }
+    },
+    "set_limits": {
+      "name": "Fijar muros / zonas prohibidas",
+      "description": "Sustituye todos los muros virtuales y/o zonas prohibidas (lo que guarda el editor de la tarjeta).",
+      "fields": {
+        "walls": {
+          "name": "Muros",
+          "description": "Lista de [x1, y1, x2, y2] en coordenadas del robot."
+        },
+        "no_go_zones": {
+          "name": "Zonas prohibidas",
+          "description": "Lista de {mode: 0 todo / 1 no aspirar / 2 no fregar, points: [[x, y], ...]}."
+        },
+        "config_entry_id": {
+          "name": "Robot",
+          "description": "Necesario si hay varios robots."
+        }
+      }
     }
   },
   "selector": {
