@@ -1,5 +1,5 @@
 """Render a VacuumMap as a true floor plan: every cell as the robot recorded it (walls and obstacles
-dark, floor light), the area to clean tinted, the cleaned swath, path, dock and live robot dot.
+dark, floor it can reach on top of the full room shape), the area to clean tinted, the cleaned swath, path, dock and live robot dot.
 Pillow + numpy only (both ship with Home Assistant)."""
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ SCALE = 5  # output pixels per map cell
 BRUSH_CM = 30  # width of the cleaned swath drawn along the path
 
 THEMES = {
-    "light": dict(bg=(255, 255, 255), floor=(228, 228, 224), wall=(58, 58, 62), target=(200, 220, 245),
+    "light": dict(bg=(255, 255, 255), room=(236, 236, 232), floor=(196, 196, 192), wall=(58, 58, 62), target=(200, 220, 245),
                   accent=(0, 122, 255), limit=(255, 59, 48)),
-    "dark": dict(bg=(18, 18, 20), floor=(58, 58, 62), wall=(205, 205, 210), target=(30, 62, 105),
+    "dark": dict(bg=(18, 18, 20), room=(40, 40, 44), floor=(72, 72, 78), wall=(205, 205, 210), target=(30, 62, 105),
                  accent=(10, 132, 255), limit=(255, 69, 58)),
 }
 
@@ -72,6 +72,9 @@ def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selec
     img = np.empty(c.shape + (3,), np.uint8)
     img[:] = t["bg"]
     floor = (c & 7) == 7
+    _, prints = room_layers(vmap)
+    if prints:  # background: each room as it really is (furniture holes filled), robot's view on top
+        img[_arr(_img(np.logical_or.reduce(list(prints.values()))).filter(ImageFilter.MaxFilter(5)))] = t["room"]
     img[floor] = t["floor"]
     if selected:
         img[floor & (c != FLOOR_NO_ROOM) & np.isin(c >> 3, list(selected))] = t["target"]
