@@ -7,6 +7,7 @@ import base64
 import logging
 from collections.abc import Callable
 
+from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant, callback
 
 from .const import (
@@ -30,6 +31,7 @@ class LaserMapCoordinator:
         self.vmap: VacuumMap | None = None
         self.path: list[tuple[int, int]] = []
         self.png: bytes | None = None
+        self.updated: dict[str, str] = {}  # file kind -> last time the robot sent a new one (diagnostics)
         self.calibration: list[dict] = []
         self.rooms: dict[int, dict] = {}
         self.selected: set[int] = set()
@@ -83,6 +85,8 @@ class LaserMapCoordinator:
         if self._last_blob.get(kind) == blob:  # the robot re-sends an unchanged map periodically
             return
         self._last_blob[kind] = blob
+        self.updated[kind] = dt_util.utcnow().isoformat(timespec="seconds")
+        _LOGGER.debug("received %s (%d B)", name, len(blob))
         try:
             if name.startswith("map.bin"):
                 self.vmap = parse_map(blob)
