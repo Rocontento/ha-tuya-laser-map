@@ -1,23 +1,23 @@
 """Render a VacuumMap as a clean "layered plan": room footprint (light), cleanable floor (grey),
-accent dock and dashed path. Pillow + numpy only (both ship with Home Assistant)."""
+blue dock, path and live robot dot. Pillow + numpy only (both ship with Home Assistant)."""
 
 from __future__ import annotations
 
 import io
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
 
 from .protocol.mapdata import FLOOR_NO_ROOM, VacuumMap
 
-SCALE = 3  # output pixels per map cell
+SCALE = 5  # output pixels per map cell
 _SS = 2  # supersampling factor for smooth edges
 
 THEMES = {
     "light": dict(bg=(255, 255, 255, 255), footprint=(236, 236, 233), floor=(178, 178, 175),
-                  selected=(124, 154, 58), accent=(130, 160, 60), text=(40, 40, 40), limit=(255, 59, 48)),
+                  selected=(160, 196, 240), accent=(0, 122, 255), limit=(255, 59, 48)),
     "dark": dict(bg=(18, 18, 20, 255), footprint=(44, 44, 48), floor=(92, 92, 98),
-                 selected=(124, 154, 58), accent=(150, 185, 70), text=(225, 225, 230), limit=(255, 69, 58)),
+                 selected=(40, 80, 130), accent=(10, 132, 255), limit=(255, 69, 58)),
 }
 
 
@@ -73,7 +73,7 @@ def room_layers(vmap: VacuumMap) -> tuple[np.ndarray, dict[int, np.ndarray]]:
 
 
 def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selected: set[int] | None = None,
-               theme: str = "light", room_names: dict[int, str] | None = None,
+               theme: str = "light",
                walls: list[tuple[int, int, int, int]] | None = None, zones: list[list[tuple[int, int]]] | None = None) -> bytes:
     t = THEMES.get(theme, THEMES["light"])
     selected = selected or set()
@@ -100,14 +100,12 @@ def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selec
         m[y0:y1, x0:x1] = _close(_open((rid == r)[y0:y1, x0:x1], 3), 5) & fp[y0:y1, x0:x1]
         paint(m, boxes[r], t["selected"] if r in selected else t["floor"], s * 1.3, 3)
     d = ImageDraw.Draw(canvas)
-    if path:
-        pts = [((vmap.origin[0] + x / 10) * s, (vmap.origin[1] - y / 10) * s) for x, y in path]
-        acc = 0.0
-        for a, b in zip(pts, pts[1:]):
-            if (acc // (s * 4.5)) % 2 == 0:
-                d.line([a, b], fill=t["bg"][:3] + (255,), width=s + 3)
-                d.line([a, b], fill=t["accent"] + (255,), width=max(2, s - 1))
-            acc += ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+    pts = [((vmap.origin[0] + x / 10) * s, (vmap.origin[1] - y / 10) * s) for x, y in path or []]
+    if len(pts) > 1:
+        trail = Image.new("RGBA", size, (0, 0, 0, 0))
+        ImageDraw.Draw(trail).line(pts, fill=t["accent"] + (150,), width=max(2, s // 2), joint="curve")
+        canvas.alpha_composite(trail)
+
     def px(rx: float, ry: float) -> tuple[float, float]:
         cx, cy = vmap.to_cell(rx, ry)
         return cx * s, cy * s
@@ -115,24 +113,20 @@ def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selec
     if zones:
         overlay = Image.new("RGBA", size, (0, 0, 0, 0))
         od = ImageDraw.Draw(overlay)
-        for pts in zones:
-            od.polygon([px(*p) for p in pts], fill=t["limit"] + (46,), outline=t["limit"] + (255,), width=max(2, s // 2))
+        for poly in zones:
+            od.polygon([px(*p) for p in poly], fill=t["limit"] + (46,), outline=t["limit"] + (255,), width=max(2, s // 2))
         canvas.alpha_composite(overlay)
     for x1, y1, x2, y2 in walls or []:
         d.line([px(x1, y1), px(x2, y2)], fill=t["limit"] + (255,), width=max(3, s))
-    font = ImageFont.load_default(size=int(s * 2.4))
-    names = room_names or {}
-    for r, fp in prints.items():
-        ys, xs = np.nonzero(fp)
-        if not len(xs):
-            continue
-        label = names.get(r) or (vmap.rooms[r].name if r in vmap.rooms else f"Room {r}")
-        d.text((xs.mean() * s, ys.mean() * s), label, font=font, anchor="mm",
-               fill=(255, 255, 255, 255) if r in selected else t["text"] + (255,))
+    # room names are drawn by the map card (localised), not baked into the image
     x, y = vmap.dock[0] * s, vmap.dock[1] * s
     d.ellipse([x - s * 3.2, y - s * 3.2, x + s * 3.2, y + s * 3.2], fill=t["bg"][:3] + (255,), outline=t["accent"] + (255,), width=max(2, s // 2))
     d.polygon([(x - s * 1.3, y), (x, y - s * 1.3), (x + s * 1.3, y)], fill=t["accent"] + (255,))
     d.rectangle([x - s * 0.9, y, x + s * 0.9, y + s * 1.1], fill=t["accent"] + (255,))
+    if pts and ((pts[-1][0] - x) ** 2 + (pts[-1][1] - y) ** 2) ** 0.5 > s * 6:  # robot = last path point; hidden when docked
+        x, y = pts[-1]
+        d.ellipse([x - s * 2.6, y - s * 2.6, x + s * 2.6, y + s * 2.6], fill=(255, 255, 255, 255))
+        d.ellipse([x - s * 1.8, y - s * 1.8, x + s * 1.8, y + s * 1.8], fill=t["accent"] + (255,))
     out = io.BytesIO()
     canvas.resize((vmap.width * SCALE, vmap.height * SCALE), Image.LANCZOS).save(out, "PNG", optimize=True)
     return out.getvalue()
