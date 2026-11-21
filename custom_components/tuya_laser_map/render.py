@@ -5,6 +5,7 @@ Pillow + numpy only (both ship with Home Assistant)."""
 from __future__ import annotations
 
 import io
+from collections import deque
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -173,29 +174,77 @@ def calibration_points(vmap: VacuumMap) -> list[dict]:
     return pts
 
 
-def _outline(fp: np.ndarray, step: int = 3) -> list[tuple[int, int]]:
-    """Row-scan polygon (left edge down, right edge up) every ``step`` cells.
-    ponytail: exact for y-monotone rooms; L/U shapes get their concave side bridged."""
-    rows = [y for y in range(0, fp.shape[0], step) if fp[y].any()]
-    last = int(np.nonzero(fp.any(1))[0].max())
-    if rows[-1] != last:
-        rows.append(last)
-    left = [(int(np.nonzero(fp[y])[0].min()), y) for y in rows]
-    right = [(int(np.nonzero(fp[y])[0].max()) + 1, y) for y in rows]
-    left[-1] = (left[-1][0], left[-1][1] + 1)
-    right[-1] = (right[-1][0], right[-1][1] + 1)
-    return left + right[::-1]
+def _contour(m: np.ndarray) -> list[tuple[int, int]]:
+    """Exact outline of a cell mask along cell edges (right angles only), largest loop, collinear points dropped."""
+    nxt: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    pad = np.pad(m, 1)
+    for (dy, dx), (a, b) in {(-1, 0): ((0, 0), (1, 0)), (0, 1): ((1, 0), (1, 1)),
+                             (1, 0): ((1, 1), (0, 1)), (0, -1): ((0, 1), (0, 0))}.items():
+        edge = m & ~pad[1 + dy:1 + dy + m.shape[0], 1 + dx:1 + dx + m.shape[1]]
+        for y, x in zip(*np.nonzero(edge)):
+            nxt.setdefault((int(x) + a[0], int(y) + a[1]), []).append((int(x) + b[0], int(y) + b[1]))
+    loops = []
+    while nxt:
+        start = next(iter(nxt))
+        loop, p = [start], start
+        while True:
+            q = nxt[p].pop()
+            if not nxt[p]:
+                del nxt[p]
+            if q == start:
+                break
+            loop.append(q)
+            p = q
+            if p not in nxt:  # malformed (shouldn't happen); give up on this loop
+                break
+        loops.append(loop)
+    area = lambda lp: abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(lp, lp[1:] + lp[:1])))
+    lp = max(loops, key=area)
+    return [p for i, p in enumerate(lp)  # keep corners only
+            if (lp[i - 1][0] - p[0]) * (lp[(i + 1) % len(lp)][1] - p[1]) != (lp[i - 1][1] - p[1]) * (lp[(i + 1) % len(lp)][0] - p[0])]
 
 
-def room_outlines(vmap: VacuumMap) -> dict[int, dict]:
-    """Per room: label position and outline (row-scan polygon) in robot coordinates, for the card."""
+def room_regions(vmap: VacuumMap, plan: list[dict] | None = None) -> dict[int, np.ndarray]:
+    """Cells of each room. With a floor plan: the real room, i.e. the house interior between the plan's
+    walls, shared out to the nearest room floor the robot recorded. Without: the robot footprint."""
     _, prints = room_layers(vmap)
+    if not plan:
+        return {r: fp for r, fp in prints.items() if fp.any()}
+    h, w = vmap.height, vmap.width
+    cell = lambda p: (vmap.to_cell(*p)[0] + 1, vmap.to_cell(*p)[1] + 1)  # 1-cell border so (0, 0) is outside
+    walls = Image.new("L", (w + 2, h + 2), 0)
+    d = ImageDraw.Draw(walls)
+    for e in plan:
+        if e["layer"] == "WALLS" and e["closed"]:
+            d.polygon([cell(p) for p in e["points"]], fill=255, outline=255)
+        elif e["layer"] == "WINDOWS":
+            d.line([cell(p) for p in e["points"]], fill=255, width=2)
+    closed = walls.copy()
+    for e in plan:  # doors close the house for the inside/outside test only
+        if e["layer"] == "DOORS":
+            ImageDraw.Draw(closed).line([cell(p) for p in e["points"]], fill=255, width=2)
+    ImageDraw.floodfill(closed, (0, 0), 128)
+    free = ((np.asarray(closed) != 128) & (np.asarray(walls) == 0))[1:-1, 1:-1]
+    c = np.frombuffer(vmap.cells, np.uint8).reshape(h, w)
+    floor = ((c & 7) == 7) & (c != FLOOR_NO_ROOM)
+    lab = np.where(free & floor, c >> 3, 0).astype(np.int32)
+    q = deque(zip(*np.nonzero(lab)))
+    while q:  # multi-source BFS inside the house: every free cell joins the nearest room
+        y, x = q.popleft()
+        for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+            if 0 <= ny < h and 0 <= nx < w and free[ny, nx] and not lab[ny, nx]:
+                lab[ny, nx] = lab[y, x]
+                q.append((ny, nx))
+    return {int(r): lab == r for r in np.unique(lab) if r}
+
+
+def room_outlines(vmap: VacuumMap, plan: list[dict] | None = None) -> dict[int, dict]:
+    """Per room: label position and exact outline in robot coordinates, for the card."""
     out = {}
-    for r, fp in prints.items():
-        ys, xs = np.nonzero(fp)
-        if not len(xs):
-            continue
-        poly = [vmap.to_robot(x, y) for x, y in _outline(fp)]
+    for r, m in room_regions(vmap, plan).items():
+        ys, xs = np.nonzero(m)
+        i = int(np.argmin((xs - xs.mean()) ** 2 + (ys - ys.mean()) ** 2))  # label on a cell of the room
         out[r] = {"name": vmap.rooms[r].name if r in vmap.rooms else f"Room {r}",
-                  "label": vmap.to_robot(xs.mean(), ys.mean()), "outline": poly}
+                  "label": vmap.to_robot(xs[i] + 0.5, ys[i] + 0.5),
+                  "outline": [vmap.to_robot(x, y) for x, y in _contour(m)]}
     return out

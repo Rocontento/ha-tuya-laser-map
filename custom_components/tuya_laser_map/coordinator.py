@@ -109,7 +109,7 @@ class LaserMapCoordinator:
         targets, plan = list(self.targets), self.plan  # walls/no-go zones are drawn (and edited) by the card
         png, cal, rooms = await self.hass.async_add_executor_job(
             lambda: (render_png(vmap, path, sel, theme, targets=targets, plan=plan), calibration_points(vmap),
-                     room_outlines(vmap)))
+                     room_outlines(vmap, plan)))
         self.png, self.calibration, self.rooms = png, cal, rooms
         self._notify()
 
