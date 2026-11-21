@@ -64,7 +64,7 @@ def room_layers(vmap: VacuumMap) -> tuple[np.ndarray, dict[int, np.ndarray]]:
     return vmap.__dict__["_layers"]
 
 
-def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selected: set[int] | None = None,
+def render_png(vmap: VacuumMap, path: list | None = None, selected: set[int] | None = None,
                theme: str = "light", walls: list[tuple[int, int, int, int]] | None = None,
                zones: list[list[tuple[int, int]]] | None = None,
                targets: list[list[tuple[int, int]]] | None = None, plan: list[dict] | None = None) -> bytes:
@@ -139,11 +139,14 @@ def render_png(vmap: VacuumMap, path: list[tuple[int, int]] | None = None, selec
         tint = Image.new("RGBA", canvas.size, t["target"] + (255,))
         tint.putalpha(Image.fromarray(np.minimum(np.asarray(mask), np.asarray(fl))))
         canvas.alpha_composite(tint)
-    pts = [px(x, y) for x, y in path or []]
-    if len(pts) > 1:
-        swath = max(2, round(BRUSH_CM / max(vmap.resolution_cm, 1) * s))
-        overlay(lambda d: d.line(pts, fill=t["accent"] + (55,), width=swath, joint="curve"))
-        overlay(lambda d: d.line(pts, fill=t["accent"] + (230,), width=2, joint="curve"))
+    segs = path or []
+    if segs and not isinstance(segs[0][0], (list, tuple)):  # a single path (list of points)
+        segs = [segs]
+    segs = [[px(x, y) for x, y in seg] for seg in segs]
+    pts = segs[-1] if segs else []
+    swath = max(2, round(BRUSH_CM / max(vmap.resolution_cm, 1) * s))
+    overlay(lambda d: [d.line(q, fill=t["accent"] + (55,), width=swath, joint="curve") for q in segs if len(q) > 1])
+    overlay(lambda d: [d.line(q, fill=t["accent"] + (230,), width=2, joint="curve") for q in segs if len(q) > 1])
     if zones:
         overlay(lambda d: [d.polygon([px(*p) for p in poly], fill=t["limit"] + (40,), outline=t["limit"] + (255,),
                                      width=3) for poly in zones])

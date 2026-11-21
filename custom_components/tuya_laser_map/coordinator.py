@@ -29,7 +29,7 @@ class LaserMapCoordinator:
         self.config = config
         self.theme = options.get(CONF_THEME, DEFAULT_THEME)
         self.vmap: VacuumMap | None = None
-        self.path: list[tuple[int, int]] = []
+        self.path: list[list[tuple[int, int]]] = []  # path segments of the current cleaning job
         self.png: bytes | None = None
         self.updated: dict[str, str] = {}  # file kind -> last time the robot sent a new one (diagnostics)
         self.calibration: list[dict] = []
@@ -91,13 +91,31 @@ class LaserMapCoordinator:
             if name.startswith("map.bin"):
                 self.vmap = parse_map(blob)
             elif name.startswith("cleanPath.bin"):
-                self.path = parse_path(blob)
+                self._add_path(parse_path(blob))
             else:
                 return
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Could not decode %s: %s", name, err)
             return
         self.request_render()
+
+    def _add_path(self, pts: list[tuple[int, int]]) -> None:
+        """The robot restarts its path file on pause/resume: keep earlier segments of the same job.
+        A path that grows the last segment replaces it; one starting at the dock is a new job.
+        ponytail: dock radius 50 cm heuristic, no vacuum-state coupling."""
+        if not pts:
+            return
+        last = self.path[-1] if self.path else []
+        n = min(len(last), len(pts), 3)
+        if last and pts[:n] == last[:n]:
+            self.path[-1] = pts
+            return
+        if self.vmap:
+            dx, dy = self.vmap.to_robot(*self.vmap.dock)
+            near_dock = ((pts[0][0] - dx) ** 2 + (pts[0][1] - dy) ** 2) ** 0.5 < 1000 / self.vmap.resolution_cm * 0.5
+        else:
+            near_dock = True
+        self.path = [pts] if near_dock or not last else self.path + [pts]
 
     @callback
     def request_render(self) -> None:
@@ -109,7 +127,7 @@ class LaserMapCoordinator:
     async def _render(self) -> None:
         await asyncio.sleep(0.5)  # coalesce map + path arriving together
         self._render_pending = False
-        vmap, path, sel, theme = self.vmap, list(self.path), set(self.selected), self.theme
+        vmap, path, sel, theme = self.vmap, [list(p) for p in self.path], set(self.selected), self.theme
         targets, plan = list(self.targets), self.plan  # walls/no-go zones are drawn (and edited) by the card
         png, cal, rooms = await self.hass.async_add_executor_job(
             lambda: (render_png(vmap, path, sel, theme, targets=targets, plan=plan), calibration_points(vmap),
