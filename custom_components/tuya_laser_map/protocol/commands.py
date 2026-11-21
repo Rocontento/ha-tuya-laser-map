@@ -47,6 +47,18 @@ def clean_zones(zones: list[list[tuple[int, int]]], times: int = 1) -> bytes:
     return frame(0x28, bytes(data))
 
 
+def clean_zones_v2(zones: list[list[tuple[int, int]]], times: int = 1) -> bytes:
+    """0x3a (protocol 1): newer zone clean used by robots that report no-go zones with 0x39.
+    Like 0x28 plus a leading protocol byte and an empty 19-byte name per zone. Answer: 0x3b."""
+    data = bytearray([1, times, len(zones)])
+    for points in zones:
+        data.append(len(points))
+        for x, y in points:
+            data += struct.pack(">hh", x, y)
+        data += bytes(20)
+    return frame(0x3A, bytes(data))
+
+
 def goto_point(x: int, y: int) -> bytes:
     """0x16: go to / spot clean at a point."""
     return frame(0x16, struct.pack(">hh", x, y))

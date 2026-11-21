@@ -145,6 +145,7 @@ class LaserMapCoordinator:
                                want=commands.DP_COMMAND)
         raw = reply.get(commands.DP_COMMAND)
         parsed = commands.parse(base64.b64decode(raw)) if raw else None
+        _LOGGER.debug("sent %s -> reply %s", frame.hex(), parsed and (hex(parsed[0]), parsed[1].hex()))
         if parsed and self._apply_limits_report(*parsed):
             self.request_render()
         return parsed
@@ -195,7 +196,9 @@ class LaserMapCoordinator:
             polys.append([(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
         self.selected, self.targets = set(), polys
         self.request_render()
-        await self.send(commands.clean_zones(polys, times))
+        reply = await self.send(commands.clean_zones_v2(polys, times))
+        if not reply or reply[0] != 0x3B:  # older firmware: fall back to 0x28
+            await self.send(commands.clean_zones(polys, times))
 
     async def goto(self, x: float, y: float) -> None:
         await self.send(commands.goto_point(round(x), round(y)))
