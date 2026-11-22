@@ -38,6 +38,19 @@ const PARTS = [["filter_life", "reset_filter", "Filtro", "mdi:air-filter"],
   ["duster_cloth_lifetime", "reset_mop_cloth", "Mopa", "mdi:water"]];
 const icon = (name, size = 18) => Object.assign(document.createElement("ha-icon"), { icon: name, style: `--mdc-icon-size:${size}px` });
 const ACTIVE = ["cleaning", "paused", "returning"];
+const FAULTS = {  // the robot's fault bitmap labels (Tuya thing model, DP 28)
+  low_power: "Batería baja", poweroff: "Interruptor apagado", wheel_trap: "Rueda atascada",
+  cannot_upgrade: "No se puede actualizar", collision_stuck: "Parachoques atascado", dust_station_full: "Base de vaciado llena",
+  tile_error: "Error de suelo", lidar_speed_err: "Error en el láser", lidar_cover: "Láser bloqueado",
+  lidar_point_err: "Error en el láser", front_wall_dirty: "Sensor frontal sucio", psd_dirty: "Sensor de pared sucio",
+  middle_sweep: "Cepillo central atascado", side_sweep: "Cepillo lateral atascado", fan_speed: "Error del ventilador",
+  dustbox_out: "Falta el depósito", dustbox_full: "Depósito de polvo lleno", no_dust_box: "Falta el depósito",
+  dustbox_fullout: "Depósito lleno o fuera", trapped: "Robot atrapado", pick_up: "Robot levantado",
+  no_dust_water_box: "Falta el depósito de agua", water_box_empty: "Depósito de agua vacío",
+  forbid_area: "Dentro de zona prohibida", land_check: "Sensor de caída sucio", findcharge_fail: "No encuentra la base",
+  battery_err: "Error de batería", kit_wheel: "Error en las ruedas", kit_lidar: "Error en el láser", kit_water_pump: "Error en la bomba de agua",
+};
+const faultText = (d) => [...new Set(String(d).split(/[\s,;|]+/).filter(Boolean).map((k) => FAULTS[k] || k.replace(/_/g, " ")))].join(" · ");
 
 class TuyaLaserMapCard extends HTMLElement {
   setConfig(config) {
@@ -577,7 +590,7 @@ class TuyaLaserMapCard extends HTMLElement {
     const el = this.shadowRoot.querySelector(".alert"), prob = this._state("binary_sensor", "problem");
     const err = (prob && prob.state === "on") || (vac && vac.state === "error");
     const desc = prob && prob.attributes.description;
-    el.textContent = err ? `⚠︎ ${desc && desc !== "ok" ? desc : "El robot tiene un problema"}` : "";
+    el.textContent = err ? `⚠︎ ${desc && desc !== "ok" ? faultText(desc) : "El robot tiene un problema"}` : "";
     el.classList.toggle("show", !!err);
   }
 
