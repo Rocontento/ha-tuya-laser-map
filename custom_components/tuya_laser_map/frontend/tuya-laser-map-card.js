@@ -92,7 +92,8 @@ class TuyaLaserMapCard extends HTMLElement {
     if (!st) return;
     const a = st.attributes;
     this.shadowRoot.querySelector("ha-card").classList.toggle("dark", dark);
-    const pic = (dark ? a.picture_dark : a.picture_light) || a.entity_picture;
+    const base = (dark ? a.picture_dark : a.picture_light) || a.entity_picture;
+    const pic = base && `${base}&v=${encodeURIComponent(st.last_updated)}`; // the themed URL never changes: bust per update
     if (pic && this._img.getAttribute("src") !== pic) this._img.src = pic;
     this._calibrate(a.calibration_points || []);
     this._render();
