@@ -76,12 +76,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 def _coordinator(hass: HomeAssistant, call: ServiceCall) -> LaserMapCoordinator:
+    return _entry(hass, call).runtime_data
+
+
+def _entry(hass: HomeAssistant, call: ServiceCall) -> ConfigEntry:
     entries = [e for e in hass.config_entries.async_loaded_entries(DOMAIN)]
     if entry_id := call.data.get("config_entry_id"):
         entries = [e for e in entries if e.entry_id == entry_id]
     if len(entries) != 1:
         raise ServiceValidationError("Specify config_entry_id: zero or several robots match")
-    return entries[0].runtime_data
+    return entries[0]
 
 
 def _register_services(hass: HomeAssistant) -> None:
@@ -123,7 +127,16 @@ def _register_services(hass: HomeAssistant) -> None:
         await _coordinator(hass, call).clean_zones(call.data["zones"], call.data["times"])
 
     async def goto(call: ServiceCall) -> None:
-        await _coordinator(hass, call).goto(call.data["x"], call.data["y"])
+        """The robot only has "go and spot-clean there" (0x16, mode pose): pause it on arrival."""
+        from .vacuum import source_vacuum
+        entry = _entry(hass, call)
+        src = source_vacuum(hass, entry)
+
+        async def arrived() -> None:
+            if src:
+                await hass.services.async_call("vacuum", "pause", {"entity_id": src})
+
+        await entry.runtime_data.goto(call.data["x"], call.data["y"], arrived)
 
     hass.services.async_register(DOMAIN, "clean_rooms", clean_rooms, CLEAN_ROOMS_SCHEMA)
     hass.services.async_register(DOMAIN, "clean_zone", clean_zone, CLEAN_ZONE_SCHEMA)

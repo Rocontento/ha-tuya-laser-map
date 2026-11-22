@@ -6,7 +6,7 @@ import asyncio
 import time
 import base64
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant, callback
@@ -49,6 +49,7 @@ class LaserMapCoordinator:
         self._outline_key: tuple | None = None
         self._outline_at = 0.0
         self._last_blob: dict[str, bytes] = {}
+        self._goto: tuple[float, float, Callable[[], Awaitable[None]]] | None = None  # target + on-arrival
 
     # --- lifecycle -------------------------------------------------------------------
     def start(self) -> None:
@@ -96,6 +97,7 @@ class LaserMapCoordinator:
                 self.vmap = parse_map(blob)
             elif name.startswith("cleanPath.bin"):
                 self._add_path(parse_path(blob))
+                self._check_arrival()
             else:
                 return
         except Exception as err:  # noqa: BLE001
@@ -282,8 +284,19 @@ class LaserMapCoordinator:
         if not reply or reply[0] != 0x3B:  # older firmware: fall back to 0x28
             await self.send(commands.clean_zones(polys, times))
 
-    async def goto(self, x: float, y: float) -> None:
+    async def goto(self, x: float, y: float, on_arrive: Callable[[], Awaitable[None]] | None = None) -> None:
+        self._goto = (x, y, on_arrive) if on_arrive else None
         await self.send(commands.goto_point(round(x), round(y)))
+
+    def _check_arrival(self) -> None:
+        """ponytail: arrival = last path point within 30 cm; lags by one path update (a few s)."""
+        if not (self._goto and self.path and self.vmap):
+            return
+        x, y, cb = self._goto
+        px, py = self.path[-1][-1]
+        if ((px - x) ** 2 + (py - y) ** 2) ** 0.5 <= 300 / self.vmap.resolution_cm:
+            self._goto = None
+            self.hass.async_create_task(cb())
 
     async def remove_limit_at(self, x: float, y: float, radius: float = 60) -> bool:
         """Remove the no-go zone containing (x, y), or else the wall passing within ``radius``

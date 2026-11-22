@@ -46,3 +46,17 @@ def test_visited_rooms_in_order():
     c.path = [[(-150, 0), (150, 0)]]            # from room 3 into room 4
     assert c.visited_rooms == [3, 4]
     assert c.current_room == 4
+
+
+def test_goto_fires_on_arrival():
+    fired = []
+    c = LaserMapCoordinator.__new__(LaserMapCoordinator)
+    c.vmap = VacuumMap(1, 100, 100, (50.0, 50.0), 5, (50.0, 50.0), bytes(100 * 100))
+    c.hass = type("H", (), {"async_create_task": lambda self, coro: fired.append(coro.close())})()
+    c._goto = (300, 0, lambda: (lambda: (yield))())  # any coroutine-like object
+    c.path = [[(0, 0), (200, 0)]]                     # 100 units = 50 cm away: not yet
+    c._check_arrival()
+    assert not fired and c._goto
+    c.path = [[(0, 0), (260, 0)]]                     # 40 units = 20 cm: arrived
+    c._check_arrival()
+    assert len(fired) == 1 and c._goto is None
