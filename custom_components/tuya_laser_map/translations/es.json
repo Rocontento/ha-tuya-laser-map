@@ -82,6 +82,67 @@
     "sensor": {
       "current_room": {
         "name": "Habitación actual"
+      },
+      "status": {
+        "name": "Estado",
+        "state": {
+          "standby": "En espera",
+          "smart": "Limpiando toda la casa",
+          "zone": "Limpiando zona",
+          "partial": "Limpieza puntual",
+          "cleaning": "Limpiando",
+          "paused": "En pausa",
+          "seeking_spot": "Yendo al punto",
+          "located_spot": "En el punto",
+          "left_spot": "Punto inalcanzable",
+          "returning": "Volviendo a la base",
+          "charging": "Cargando",
+          "charged": "Carga completa",
+          "sleep": "En reposo",
+          "selecting_room": "Limpiando habitaciones",
+          "game": "Modo juego",
+          "mapping": "Creando el mapa",
+          "collecting_dust": "Vaciando el depósito",
+          "manual": "Control manual",
+          "cleaning_to_continue": "Reanudando la limpieza",
+          "charging_to_continue": "Cargando para continuar"
+        }
+      },
+      "error": {
+        "name": "Error",
+        "state": {
+          "ok": "Ninguno",
+          "low_power": "Batería baja",
+          "poweroff": "Interruptor apagado",
+          "wheel_trap": "Rueda atascada",
+          "cannot_upgrade": "No se puede actualizar",
+          "collision_stuck": "Parachoques atascado",
+          "dust_station_full": "Base de vaciado llena",
+          "tile_error": "Error de suelo",
+          "lidar_speed_err": "Error en el láser",
+          "lidar_cover": "Láser bloqueado",
+          "lidar_point_err": "Error en el láser",
+          "front_wall_dirty": "Sensor frontal sucio",
+          "psd_dirty": "Sensor de pared sucio",
+          "middle_sweep": "Cepillo central atascado",
+          "side_sweep": "Cepillo lateral atascado",
+          "fan_speed": "Error del ventilador",
+          "dustbox_out": "Falta el depósito",
+          "dustbox_full": "Depósito de polvo lleno",
+          "no_dust_box": "Falta el depósito",
+          "dustbox_fullout": "Depósito lleno o fuera",
+          "trapped": "Robot atrapado",
+          "pick_up": "Robot levantado",
+          "no_dust_water_box": "Falta el depósito de agua",
+          "water_box_empty": "Depósito de agua vacío",
+          "forbid_area": "Dentro de zona prohibida",
+          "land_check": "Sensor de caída sucio",
+          "findcharge_fail": "No encuentra la base",
+          "battery_err": "Error de batería",
+          "kit_wheel": "Error en las ruedas",
+          "kit_lidar": "Error en el láser",
+          "kit_water_pump": "Error en la bomba de agua"
+        }
       }
     },
     "binary_sensor": {

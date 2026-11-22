@@ -82,6 +82,67 @@
     "sensor": {
       "current_room": {
         "name": "Current room"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "standby": "Standby",
+          "smart": "Cleaning the whole home",
+          "zone": "Cleaning a zone",
+          "partial": "Spot cleaning",
+          "cleaning": "Cleaning",
+          "paused": "Paused",
+          "seeking_spot": "Going to the point",
+          "located_spot": "At the point",
+          "left_spot": "Point unreachable",
+          "returning": "Returning to the dock",
+          "charging": "Charging",
+          "charged": "Fully charged",
+          "sleep": "Sleeping",
+          "selecting_room": "Cleaning rooms",
+          "game": "Game mode",
+          "mapping": "Mapping",
+          "collecting_dust": "Emptying the dustbin",
+          "manual": "Manual control",
+          "cleaning_to_continue": "Resuming cleaning",
+          "charging_to_continue": "Charging to resume"
+        }
+      },
+      "error": {
+        "name": "Error",
+        "state": {
+          "ok": "None",
+          "low_power": "Low battery",
+          "poweroff": "Power switch off",
+          "wheel_trap": "Wheel stuck",
+          "cannot_upgrade": "Cannot update",
+          "collision_stuck": "Bumper stuck",
+          "dust_station_full": "Dust station full",
+          "tile_error": "Floor error",
+          "lidar_speed_err": "Lidar error",
+          "lidar_cover": "Lidar blocked",
+          "lidar_point_err": "Lidar error",
+          "front_wall_dirty": "Front sensor dirty",
+          "psd_dirty": "Wall sensor dirty",
+          "middle_sweep": "Main brush stuck",
+          "side_sweep": "Side brush stuck",
+          "fan_speed": "Fan error",
+          "dustbox_out": "Dustbin missing",
+          "dustbox_full": "Dustbin full",
+          "no_dust_box": "Dustbin missing",
+          "dustbox_fullout": "Dustbin full or missing",
+          "trapped": "Robot trapped",
+          "pick_up": "Robot lifted",
+          "no_dust_water_box": "Water tank missing",
+          "water_box_empty": "Water tank empty",
+          "forbid_area": "Inside a no-go zone",
+          "land_check": "Cliff sensor dirty",
+          "findcharge_fail": "Cannot find the dock",
+          "battery_err": "Battery error",
+          "kit_wheel": "Wheel error",
+          "kit_lidar": "Lidar error",
+          "kit_water_pump": "Water pump error"
+        }
       }
     },
     "binary_sensor": {

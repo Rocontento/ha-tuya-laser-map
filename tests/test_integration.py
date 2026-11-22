@@ -42,6 +42,7 @@ async def test_map_camera_and_room_clean(hass, hass_client_no_auth):
                  0x39: (0x39, robot["nogo"])}.get(cmd, (0x15, bytes([1, 1, 9])))
         return {"15": base64.b64encode(commands.frame(*reply)).decode()}
 
+    hass.states.async_set("vacuum.robot", "cleaning", {"status": "located spot"})  # the tuya-local vacuum
     entry = MockConfigEntry(domain=DOMAIN, data=DATA, unique_id="dev1", title="Conga")
     entry.add_to_hass(hass)
     with patch("custom_components.tuya_laser_map.coordinator.run_session", fake_session), \
@@ -60,6 +61,10 @@ async def test_map_camera_and_room_clean(hass, hass_client_no_auth):
         rooms = state.attributes["rooms"]
         assert {r["name"] for r in rooms.values()} >= {"Kitchen", "Living room", "Bathroom"}
         assert len(state.attributes["calibration_points"]) == 3
+        assert hass.states.get("sensor.conga_status").state == "located_spot"  # translated in the UI
+        hass.states.async_set("vacuum.robot", "docked", {"status": "charging"})
+        await hass.async_block_till_done()
+        assert hass.states.get("sensor.conga_status").state == "charging"
 
         # light/dark map for the card: needs the camera token
         client = await hass_client_no_auth()
