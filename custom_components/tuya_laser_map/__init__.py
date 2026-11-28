@@ -5,18 +5,23 @@ from __future__ import annotations
 import voluptuous as vol
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
+import logging
 import pathlib
 
 from .const import DOMAIN
 from .coordinator import LaserMapCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+PROFILE = "cecotec_conga9590_vacuum.yaml"  # tuya-local profile for the Conga 9590, bundled in tuya_local/
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.CAMERA, Platform.SENSOR, Platform.VACUUM]
 
@@ -46,7 +51,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(card), False)])
     if "frontend" in hass.config.components:  # absent only in bare test setups
         add_extra_js_url(hass, f"{CARD_URL}?v={card.stat().st_mtime_ns}")
+    if await hass.async_add_executor_job(_install_tuya_local_profile, hass):
+        async_at_started(hass, _reload_failed_tuya_local)
     return True
+
+
+def _install_tuya_local_profile(hass: HomeAssistant) -> bool:
+    """tuya-local updates wipe its devices folder, and with it our robot profile: put it back.
+    True if it was (re)written."""
+    devices = pathlib.Path(hass.config.path("custom_components", "tuya_local", "devices"))
+    if not devices.is_dir():
+        return False
+    src = pathlib.Path(__file__).parent / "tuya_local" / PROFILE
+    dst = devices / PROFILE
+    if dst.exists() and dst.read_bytes() == src.read_bytes():
+        return False
+    dst.write_bytes(src.read_bytes())
+    _LOGGER.warning("Installed the %s profile into tuya-local (it was missing or outdated)", PROFILE)
+    return True
+
+
+async def _reload_failed_tuya_local(hass: HomeAssistant) -> None:
+    """tuya-local may have started before the profile was back: retry its entries that failed."""
+    for e in hass.config_entries.async_entries("tuya_local"):
+        if e.state is not ConfigEntryState.LOADED:
+            await hass.config_entries.async_reload(e.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
